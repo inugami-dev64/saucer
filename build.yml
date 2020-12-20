@@ -1,0 +1,12 @@
+preinit: 
+  - hello world
+  cc_flags:
+    - none
+  target: 
+    - hello_world.exe 
+  deps: 
+    - none
+  
+tasks: 
+  - dynamic_lib
+  task: none
