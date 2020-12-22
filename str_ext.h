@@ -8,6 +8,8 @@ typedef enum TrimMode {
 } TrimMode;
 
 void trimStr(char **p_str, TrimMode trim_mode);
+void cropStr(char **p_str, TrimMode trim_mode, int c);
 void removeComments(char **line_contents, size_t n_lines);
+void cleanStr(char *str, int32_t size);
 
 #endif

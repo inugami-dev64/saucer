@@ -4,7 +4,7 @@ OBJ = saucer.c.o \
 	  str_ext.c.o 
 
 TARGET = saucer
-FLAGS =  -Wall -O3
+FLAGS = -g -Wall
 
 $(TARGET): $(OBJ)
 	$(CC) $(OBJ) -o $(TARGET)

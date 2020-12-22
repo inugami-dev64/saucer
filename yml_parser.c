@@ -1,546 +1,579 @@
-#define YML_PARSER_PRIVATE 1
+#define YAML_PARSER_PRIVATE
 #include "saucer.h"
 
-/* Find the most recent non sub key value (spaces count != -1)  */
-static int32_t findLastNonSubKeyIndex(ListData *list_data, int32_t list_count) {
+/* Generic yaml parser helpers */
+/* Check if line contains string */
+static uint8_t yamlSearchString(char *line, int32_t line_index, StrBounds **p_str_bds, int32_t *p_str_bds_c) {
     int32_t index;
-    for(index = list_count - 1; index >= 0; index--)
-        if(list_data[index].spaces_count != -1) break;
-
-    return index;
-}
-
-
-/* Delete all lines with no information on it */
-static void cleanEmptyLines(char ***p_line_contents, size_t *p_line_count) {
-    int32_t l_index, r_index;
-    uint8_t found_content = false;
-    int32_t tmp_lines_index = 0;
-    char **tmp_lines = (char**) calloc(1, sizeof(char*));
-
-    for(l_index = 0; l_index < (*p_line_count); l_index++) {
-        // Check if string consists of only whitespaces
-        for(r_index = 0; r_index < (int32_t) strlen((*p_line_contents)[l_index]); r_index++) {
-            if((*p_line_contents)[l_index][r_index] != 0x20) {
-                found_content = true;
-                break;
-            }
-        }
-
-        // Add string contents to temporary array
-        if(found_content) {
-            tmp_lines[tmp_lines_index] = (char*) calloc(strlen((*p_line_contents)[l_index]), sizeof(char));
-            strcpy(tmp_lines[tmp_lines_index], (*p_line_contents)[l_index]);
-
-            tmp_lines_index++;
-            tmp_lines = (char**) realloc(tmp_lines, (tmp_lines_index + 1) * sizeof(char*));
-            found_content = false;
-        }
-    }
-
-    // Clean the current line contents
-    for(l_index = 0; l_index < (*p_line_count); l_index++)
-        free((*p_line_contents)[l_index]);
-    
-    free((*p_line_contents));
-    (*p_line_count) = tmp_lines_index;
-
-    // Copy tmp data to line contents
-    (*p_line_contents) = (char**) calloc((*p_line_count), sizeof(char*));
-    for(l_index = 0; l_index < (*p_line_count); l_index++) {
-        (*p_line_contents)[l_index] = (char*) calloc(strlen(tmp_lines[l_index]), sizeof(char));
-        strcpy((*p_line_contents)[l_index], tmp_lines[l_index]);
-    }
-
-    // Clean tmp line contents
-    for(l_index = 0; l_index < tmp_lines_index + 1; l_index++)
-        free(tmp_lines[l_index]);
-    
-    free(tmp_lines);
-}
-
-
-/* Find string in line */
-static uint8_t findString(char *line, int32_t line_index, int32_t *p_min, int32_t *p_max) {
-    int32_t index;
-    char mark;
+    CharInfo *qms = (CharInfo*) calloc(1, sizeof(CharInfo));
+    int32_t qm_c = 0;
     uint8_t is_str_found = false;
-    uint8_t is_str_closed = false;
-
-    // Find first quotation mark
-    for(index = 0; index < (int32_t) strlen(line); index++) {
-        // 0x27 == ''' && 0x22 == '"'
-        if(line[index] == 0x27 || line[index] == 0x22) {
-            mark = line[index];
-            (*p_min) = index;
+    
+    // Find the minimum quotation mark index
+    for(index = 0; index < strlen(line); index++) {
+        if(line[index] == 0x22 || line[index] == 0x27) {
+            qm_c++;
+            qms = (CharInfo*) realloc(qms, qm_c * sizeof(CharInfo));
+            qms[qm_c - 1].ch = line[index];
+            qms[qm_c - 1].index = index;
             is_str_found = true;
-            index++;
-            break;
         }
     }
 
-    // Find second quotation mark
-    for(; index < (int32_t) strlen(line); index++) {
-        if(line[index] == mark) {
-            (*p_max) = index;
-            is_str_closed = true;
-            break;
-        }
+    int32_t s_quo_c = 0;
+    int32_t d_quo_c = 0;
+    
+    // Count the total amount of quotation marks 
+    for(index = 0; index < qm_c; index++) {
+        if(qms[index].ch == 0x27) s_quo_c++;
+        else if(qms[index].ch == 0x22) d_quo_c++;
     }
 
-    // Check for parsing error
-    if(!is_str_closed && is_str_found) {
-        PERR("unclosed string", line_index);
+    // Check for parsing errors
+    if(s_quo_c % 2) {
+        PERR("unclosed single quotation mark string", line_index + 1);
         exit(-1);
+    }
+
+    if(d_quo_c % 2) {
+        PERR("unclosed double quotation mark string", line_index + 1);
+        exit(-1);
+    }
+
+    for(index = 0; index < qm_c - 1; index += 2) {
+        // Check for parsing error
+        if(qms[index].ch != qms[index + 1].ch) {
+            PERR("quotation marks (0x27 and 0x22) are not allowed to be used inside strings", line_index + 1);
+            exit(-1);
+        }
+
+        (*p_str_bds_c)++;
+        (*p_str_bds) = (StrBounds*) realloc((*p_str_bds), (*p_str_bds_c) * sizeof(StrBounds));
+        (*p_str_bds)[(*p_str_bds_c) - 1].str_beg = qms[index].index;
+        (*p_str_bds)[(*p_str_bds_c) - 1].str_end = qms[index + 1].index;
     }
 
     return is_str_found;
 }
 
 
-/* Find the nearest key value */ 
-static uint8_t findKeyName(char *line, int32_t line_index, char **p_key_name, int32_t *p_beg_sp, int32_t start_index, int32_t end_index) {
-    int32_t index, ch_index; 
-    uint8_t colon_found = false;
-    int32_t min_str = 0, max_str = 0;
-    char *tmp_str = calloc(YML_LIST_NAME_BUF_SIZE, sizeof(char));
-    uint8_t is_string = findString(line, line_index, &min_str, &max_str);
+/* Find the key name colon positions and name beginning breakpoint position on line */
+static void yamlFindKeyNameBounds(char *line, int32_t line_index, int32_t min_index, int32_t max_index, KeyPosInfo **p_kpi, int32_t *p_kpi_c) {
+    int32_t l_index, r_index;
+    uint8_t found_min = false;
+    uint8_t is_array_beg = false;
+    uint8_t is_array_cl = false;
 
-    if(end_index == -1) end_index = (int32_t) strlen(line);
+    // Search for colons
+    for(l_index = min_index; l_index < max_index; l_index++) {
+        if(line[l_index] == 0x3A) {
+            (*p_kpi_c)++;
+            (*p_kpi) = (KeyPosInfo*) realloc((*p_kpi), (*p_kpi_c) * sizeof(KeyPosInfo));
+            (*p_kpi)[(*p_kpi_c) - 1].max_index = l_index;
 
-    for(index = start_index, ch_index = 0; index < end_index - 1; index++, ch_index++) {
-        if(!is_string || (index < min_str || index > max_str)) {
-            if(line[index] == 0x3A) {
-                colon_found = true;
-                break;
+            // Check for parsing error
+            if(l_index + 1 < max_index && line[l_index + 1] != 0x20) {
+                PERR("expected whitespace after key name declaration", line_index + 1);
+                exit(-1);
             }
+        }        
 
-            if(line[index] == 0x7B) return false;
-
-        }
-        tmp_str[ch_index] = line[index];
+        if(line[l_index] == 0x7B) is_array_beg = true;
+        if(line[l_index] == 0x7D) is_array_cl = true;
     }
 
-    if(!colon_found) return false;
-    // Find the amount of whitespaces
-    if(p_beg_sp)
-        for((*p_beg_sp) = 0; (*p_beg_sp) < strlen(tmp_str) && tmp_str[(*p_beg_sp)] == 0x20; (*p_beg_sp)++);
-
-    trimStr(&tmp_str, TRIM_BOTH_SIDES);
-
-    (*p_key_name) = (char*) calloc(strlen(tmp_str), sizeof(char));
-    strcpy((*p_key_name), tmp_str);
-    free(tmp_str);
-    return true;
-}
-
-
-/* Extract all array elements into separate lists */ 
-static uint8_t handleMultiArray(char *line, int32_t line_index, ListData **p_lists, size_t *p_list_count) {
-    int32_t l_index, r_index, ch_index;
-    int32_t beg_index, end_index;
-    int32_t elem_count = 0;
-    int32_t *elem_br_pt = (int32_t*) calloc(elem_count + 1, sizeof(int32_t));
-
-    // Find array starting parenthesis
-    // 0x7B == '{'
-    for(beg_index = 0; beg_index < strlen(line) && line[beg_index] != 0x7B; beg_index++);
-    if(beg_index >= strlen(line)) return false;
-
-    // Check if array is closed
-    uint8_t is_arr_closed = false;
-    for(end_index = 0; end_index < strlen(line); end_index++) {
-        if(line[end_index] == 0x7D) {
-            is_arr_closed = true;
+    for(l_index = strlen(line) - 1; l_index >= 0; l_index--) {
+        if(line[l_index] == 0x7D) {
+            is_array_cl = true;
             break;
         }
     }
-    
+
     // Check for parsing error
-    if(!is_arr_closed) {
-        PERR("unclosed array", line_index);
+    if(is_array_beg && !is_array_cl) {
+        PERR("unclosed array", line_index + 1);
         exit(-1);
     }
 
-    // Find all array element breakpoints
-    int32_t prev_pos = beg_index;
-    for(l_index = prev_pos; l_index < end_index; l_index++) {
-        if(line[l_index] == 0x2C) {
-            elem_count++;
-            elem_br_pt = (int32_t*) realloc(elem_br_pt, sizeof(int32_t) * elem_count);
-
-            elem_br_pt[elem_count - 1] = l_index;
-            prev_pos = elem_br_pt[elem_count];
+    // Find the minimum points
+    for(l_index = 0; l_index < (*p_kpi_c); l_index++) {
+        for(r_index = (*p_kpi)[l_index].max_index; r_index >= 0; r_index--) {
+            // Check for the breakpoint characters
+            if(line[r_index] == 0x7B || line[r_index] == 0x2C) {
+                (*p_kpi)[l_index].min_index = r_index + 1;
+                (*p_kpi)[l_index].is_arr_elem = true;
+                found_min = true;
+                break;
+            }
         }
+
+        if(!found_min) (*p_kpi)[l_index].min_index = 0;
+        found_min = false;
     }
+}
 
-    // Find all keys and their values from the array
-    char *tmp_name, *tmp_str;
-    prev_pos = beg_index;
-    uint8_t is_key_found;
-    for(l_index = 0; l_index < elem_count + 1; l_index++) {
-        // Search for key name
-        if(l_index == elem_count) {
-            is_key_found = findKeyName(line, line_index, &tmp_name, NULL, prev_pos + 1, end_index - 1);
 
-            // Find colon
-            for(r_index = prev_pos + 1; r_index < end_index; r_index++)
-                if(line[r_index] == 0x3A) break;    
-        }
+/* Extract all values from yaml list */
+static void yamlExtractList(char *list, int32_t line_index, int32_t ws_c, int32_t list_index, ValueData **p_val_data, int32_t *p_val_c) {
+    int32_t l_index, ch_index;
+    char *tmp_str = (char*) calloc(YAML_CH_BUFFER_SIZE, sizeof(char));
+
+    // Allocate memory for contents
+    (*p_val_c)++;
+    (*p_val_data) = (ValueData*) realloc((*p_val_data), sizeof(ValueData) * (*p_val_c));
+
+    // Populate ValueData instance
+    for(l_index = 1, ch_index = 0; l_index < strlen(list); l_index++) {
+        if(list[l_index] == 0x2C || list[l_index] == 0x5D) {
+            (*p_val_data)[(*p_val_c) - 1].line = line_index;
+            (*p_val_data)[(*p_val_c) - 1].start_index = list_index + l_index;
+            (*p_val_data)[(*p_val_c) - 1].ws_c = ws_c;
+
+            trimStr(&tmp_str, TRIM_BOTH_SIDES);
+            (*p_val_data)[(*p_val_c) - 1].value_str = (char*) calloc(strlen(tmp_str) + 1, sizeof(char));
+            strncpy((*p_val_data)[(*p_val_c) - 1].value_str, tmp_str, strlen(tmp_str));
+            
+            // Clean tmp str
+            ch_index = 0;
+            free(tmp_str);
+            tmp_str = (char*) calloc(YAML_CH_BUFFER_SIZE, sizeof(char));
+
+            // Allocate more memory for ValueData if needed
+            if(list[l_index] != 0x5D) {
+                (*p_val_c)++;
+                (*p_val_data) = (ValueData*) realloc((*p_val_data), (*p_val_c) * sizeof(ValueData));    
+            }
+        }      
 
         else {
-            is_key_found = findKeyName(line, line_index, &tmp_name, NULL, prev_pos + 1, elem_br_pt[l_index]);
-            // Find colon
-            for(r_index = prev_pos + 1; r_index < elem_br_pt[l_index]; r_index++)
-                if(line[r_index] == 0x3A) break;    
+            tmp_str[ch_index] = list[l_index];
+            ch_index++;            
         }
-        if(!is_key_found) {
-            PERR("no key specified in double multidimentional array", line_index + 1);
+    }
+}
+
+
+/* Find values that are directly next to the key declaration */
+static void yamlFindDirectValues(char *line, int32_t line_index, int32_t *kci, int32_t kci_c, ValueData **p_val_data, int32_t *p_val_c) {
+    uint8_t is_content = false;
+    int32_t l_index, r_index, ch_index;
+    int32_t val_s_index = 0;
+    char *tmp_str = (char*) calloc(YAML_CH_BUFFER_SIZE, sizeof(char));
+
+    for(l_index = 0; l_index < kci_c; l_index++) {
+        for(r_index = kci[l_index] + 1; r_index < strlen(line); r_index++) {
+            if(line[r_index] != 0x20) {
+                is_content = true;
+                break;
+            }
+        }
+
+        // Check if key name declaration contains value
+        if(!is_content) return;
+
+        // Record value data to tmp_str
+        for(r_index = kci[l_index] + 1, ch_index = 0; r_index < strlen(line); r_index++, ch_index++)
+            tmp_str[ch_index] = line[r_index];
+
+        // Trim tmp_str
+        trimStr(&tmp_str, TRIM_BOTH_SIDES);
+
+        if(tmp_str[0] == 0x5B) {
+            uint8_t is_cl = false;
+            for(r_index = 1; r_index < strlen(tmp_str); r_index++) {
+                if(tmp_str[r_index] == 0x5D) {
+                    is_cl = true;
+                    break;
+                } 
+            }
+            // Check for parsing error
+            if(!is_cl) {
+                PERR("unclosed list", line_index + 1);
+                exit(-1);
+            }
+
+            // Find the starting index of the list
+            for(val_s_index = kci[l_index] + 1; val_s_index < strlen(line); val_s_index++)
+                if(line[val_s_index] == 0x5B) break;
+
+            // Remove all irrelevant data
+            for(r_index++; r_index < strlen(tmp_str); r_index++)
+                tmp_str[r_index] = 0x00;
+
+            yamlExtractList(tmp_str, line_index, -1, val_s_index, p_val_data, p_val_c);
+            return;
+        }
+
+        // Found quotation marks now search for the ending mark
+        else if(tmp_str[0] == 0x22 || tmp_str[0] == 0x27) {
+            // Find same type of quotation marks
+            char mk = tmp_str[0];
+            for(r_index = 1; r_index < strlen(tmp_str); r_index++)
+                if(tmp_str[r_index] == mk) break;
+
+            // Remove irrelevant data
+            for(r_index++; r_index < strlen(tmp_str); r_index++)
+                tmp_str[r_index] = 0x00;
+
+            // Find the start index
+            for(val_s_index = kci[l_index] + 1; val_s_index < strlen(line); val_s_index++)
+                if(line[val_s_index] == mk) break;
+            
+            val_s_index++;
+            cropStr(&tmp_str, TRIM_BOTH_SIDES, 1);
+        }
+
+        else if(tmp_str[0] != 0x7B) {
+            // Find the breakpoint
+            for(r_index = 0; r_index < strlen(tmp_str); r_index++) 
+                if(tmp_str[r_index] == 0x2C || tmp_str[r_index] == 0x5D) break;
+            
+            // Remove irrelevant data
+            for(; r_index < strlen(tmp_str); r_index++)
+                tmp_str[r_index] = 0x00;
+
+            // Find the start index
+            for(val_s_index = kci[l_index] + 1; val_s_index < strlen(line); val_s_index++)
+                if(line[val_s_index] != 0x20) break;
+
+            trimStr(&tmp_str, TRIM_BOTH_SIDES);
+        }
+
+        if(tmp_str) {
+            (*p_val_c)++;
+            printf("Count: %d\n", (*p_val_c));
+            (*p_val_data) = (ValueData*) realloc((*p_val_data), (*p_val_c) * sizeof(ValueData));
+            (*p_val_data)[(*p_val_c) - 1].line = line_index;
+            (*p_val_data)[(*p_val_c) - 1].start_index = val_s_index;
+            (*p_val_data)[(*p_val_c) - 1].ws_c = -1;
+            (*p_val_data)[(*p_val_c) - 1].value_str = (char*) calloc(strlen(tmp_str) + 1, sizeof(char));
+            strncpy((*p_val_data)[(*p_val_c) - 1].value_str, tmp_str, strlen(tmp_str));
+            free(tmp_str);
+        }
+    }
+}
+
+
+static void yamlFindHyphenValues(char *line, int32_t line_index, int32_t hyph_index, ValueData **p_val_data, int32_t *p_val_c) {
+    int32_t l_index, ch_index;
+    int32_t c_index;
+    char *tmp_str = (char*) calloc(YAML_CH_BUFFER_SIZE, sizeof(char));
+
+    // Check for parsing error
+    if(hyph_index + 1 < strlen(line) && line[hyph_index + 1] != 0x20) {
+        PERR("expected whitespace after hyphen (0x2D)", line_index + 1);
+        exit(-1);
+    }
+
+    // Populate tmp_str with values data
+    for(l_index = hyph_index + 1, ch_index = 0; l_index < strlen(line); l_index++, ch_index++)
+        tmp_str[ch_index] = line[l_index];
+
+    trimStr(&tmp_str, TRIM_BOTH_SIDES);
+
+    // Find the value starting index
+    for(c_index = hyph_index + 1; c_index < strlen(line); c_index++)
+        if(line[c_index] != 0x20) break;
+    
+    // Check if data is in list
+    if(tmp_str[0] == 0x5B) {
+        // Check if list is closed
+        uint8_t is_cl = false;
+        for(l_index = 1; l_index < strlen(tmp_str); l_index++) {
+            if(tmp_str[l_index] == 0x5D) {
+                is_cl = true;
+                break;
+            }
+        }
+
+        if(!is_cl) {
+            PERR("unclosed list", line_index + 1);
             exit(-1);
         }
-        
+
+        yamlExtractList(tmp_str, line_index, hyph_index, c_index, p_val_data, p_val_c);
+        return;
+    }
+
+    // Check for quotation marks and if needed trim the string
+    char mk;
+    if(tmp_str[0] == 0x22 || tmp_str[0] == 0x27) {
+        mk = tmp_str[0];
+        uint8_t is_quo_cl = false;
+        for(l_index = 1; l_index < strlen(tmp_str); l_index++) {
+            if(tmp_str[l_index] == mk) {
+                is_quo_cl = true;
+                break;
+            }
+        }
+
         // Check for parsing error
-        if(line[r_index + 1] != 0x20) {
-            PERR("expected whitespace after key declaration", line_index);
+        if(!is_quo_cl) {
+            PERR("unclosed string", line_index + 1);
             exit(-1);
         }
-
-        // Skip whitespaces
-        for(r_index++; r_index < elem_br_pt[l_index] && line[r_index] == 0x20; r_index++);
         
-        tmp_str = (char*) calloc(elem_br_pt[l_index], sizeof(char));
+        cropStr(&tmp_str, TRIM_END, (int) (strlen(tmp_str) - 1 - l_index));
+        cropStr(&tmp_str, TRIM_FRONT, 1);
+        printf("STR: %s\n", tmp_str);
+    }
 
-        if(l_index != elem_count)
-            // Populate the tmp_str variable
-            for(ch_index = 0; r_index < elem_br_pt[l_index]; r_index++, ch_index++)
-                tmp_str[ch_index] = line[r_index];
-        else
-            for(ch_index = 0; r_index < end_index; r_index++, ch_index++)
-                tmp_str[ch_index] = line[r_index];
+    (*p_val_c)++;
+    printf("value size, c is: %d, %d, %s\n", (*p_val_c) * sizeof(ValueData), (*p_val_c), tmp_str);
+    (*p_val_data) = (ValueData*) realloc((*p_val_data), (*p_val_c) * sizeof(ValueData));
+    printf("seg test2\n");
+    (*p_val_data)[(*p_val_c) - 1].line = line_index;
+    (*p_val_data)[(*p_val_c) - 1].start_index = c_index;
+    (*p_val_data)[(*p_val_c) - 1].ws_c = hyph_index;
+    (*p_val_data)[(*p_val_c) - 1].value_str = calloc(strlen(tmp_str) + 1, sizeof(char));
+    strncpy((*p_val_data)[(*p_val_c) - 1].value_str, tmp_str, strlen(tmp_str));
+    free(tmp_str);
+}
 
 
-        (*p_list_count)++;
-        (*p_lists) = (ListData*) realloc((*p_lists), sizeof(ListData) * (*p_list_count));
-        (*p_lists)[(*p_list_count) - 1].spaces_count = -1;
-        (*p_lists)[(*p_list_count) - 1].line_index = line_index;
-        (*p_lists)[(*p_list_count) - 1].list_memb_size = 1;
+// /* Find all values specified */
+static void yamlFindValues(char *line, int32_t line_index, ValueData **p_val_data, int32_t *p_val_c, KeyData *keys, int32_t key_c) {
+    int32_t l_index;
+    int32_t *kci = (int32_t*) calloc(1, sizeof(int32_t));
+    int32_t kci_c = 0;
+
+    uint8_t is_hyphen = false;
+    int32_t hyph_index;
+    // Check if keys are present on current line 
+    for(l_index = 0; l_index < key_c; l_index++) {
+        if(keys[l_index].line == line_index) {
+            kci_c++;
+            kci = (int32_t*) realloc(kci, sizeof(int32_t) * kci_c);
+            kci[kci_c - 1] = keys[l_index].colon_index;
+        }
+
+        else if(keys[l_index].line > line_index) break;
+    }
+
+    // Search for hyphen
+    for(l_index = 0; l_index < strlen(line); l_index++) {
+        if(line[l_index] == 0x2D) {
+            is_hyphen = true;
+            hyph_index = l_index;
+        }
+
+        else if(line[l_index] != 0x20) break;
+    }
+
+    // Keys are present on the current line, so check for their values
+    if(kci_c)
+        yamlFindDirectValues(line, line_index, kci, kci_c, p_val_data, p_val_c);
+
+    if(is_hyphen) 
+        yamlFindHyphenValues(line, line_index, hyph_index, p_val_data, p_val_c);
+}
+
+
+/* Find all key names in one line */
+static void yamlFindKeys(char *line, int32_t line_index, int32_t min_index, int32_t max_index, KeyData **p_key_data, int32_t *p_key_c) {
+    int32_t l_index, r_index, ch_index;
+    KeyPosInfo *kpi = (KeyPosInfo*) calloc(1, sizeof(KeyPosInfo));
+    int32_t kpi_c = 0;
+
+    int32_t l_ws_c;
+    char *tmp_str = calloc(YAML_CH_BUFFER_SIZE, sizeof(char));
+    yamlFindKeyNameBounds(line, line_index, min_index, max_index, &kpi, &kpi_c);
+
+    for(l_index = 0; l_index < kpi_c; l_index++) {
+        for(r_index = kpi[l_index].min_index, ch_index = 0; r_index < kpi[l_index].max_index; r_index++, ch_index++)
+            tmp_str[ch_index] = line[r_index];
         
-        (*p_lists)[(*p_list_count) - 1].list_membs = (char**) calloc(1, sizeof(char*));
-        (*p_lists)[(*p_list_count) - 1].list_membs[0] = (char*) calloc(strlen(tmp_str), sizeof(char));
-        strcpy((*p_lists)[(*p_list_count) - 1].list_membs[0], tmp_str);
-        
-        (*p_lists)[(*p_list_count) - 1].list_name = (char*) calloc(strlen(tmp_name), sizeof(char));
-        strcpy((*p_lists)[(*p_list_count) - 1].list_name, tmp_name);
+        // Find the total amount of whitespaces from beginning of line to key name instance
+        if(kpi[l_index].is_arr_elem) l_ws_c = -1;
+        else {
+            for(l_ws_c = 0; l_ws_c < strlen(line); l_ws_c++) 
+                if(line[l_ws_c] != 0x20) break;
+        }
+
+        // Reallocate and populate memory for new KeyData instance
+        (*p_key_c)++;
+        (*p_key_data) = (KeyData*) realloc((*p_key_data), (*p_key_c) * sizeof(KeyData));
+        (*p_key_data)[(*p_key_c) - 1].key_val_c = 0;
+        (*p_key_data)[(*p_key_c) - 1].key_vals = (char*) calloc(1, sizeof(char));
+        (*p_key_data)[(*p_key_c) - 1].line = line_index;
+        (*p_key_data)[(*p_key_c) - 1].colon_index = kpi[l_index].max_index; 
+        (*p_key_data)[(*p_key_c) - 1].ws_c = l_ws_c;
+        trimStr(&tmp_str, TRIM_BOTH_SIDES);
+        (*p_key_data)[(*p_key_c) - 1].key_name = (char*) calloc(strlen(tmp_str) + 1, sizeof(char));
+        strncpy((*p_key_data)[(*p_key_c) - 1].key_name, tmp_str, strlen(tmp_str));
         
         free(tmp_str);
-        free(tmp_name);
-        
-        prev_pos = elem_br_pt[l_index];
+        tmp_str = (char*) calloc(YAML_CH_BUFFER_SIZE, sizeof(char));
     }
 
-    return true;
+    free(tmp_str);
 }
 
-/* Check if line belongs to list declaration */
-static uint8_t isKeyLine(char *line, int32_t line_index, int32_t *p_ws, char **p_name) {
+
+/* Main parsing function */
+static void yamlParseLine(char *line, int32_t line_index, KeyData **p_key_data, int32_t *p_key_c, ValueData **p_val_data, int32_t *p_val_c) {
+    int32_t index;
+    StrBounds *str_bds = NULL;
+    int32_t str_bds_c = 0;
+    uint8_t is_str = yamlSearchString(line, line_index, &str_bds, &str_bds_c);
+
+    if(is_str) {
+        for(index = 0; index < str_bds_c; index++) {
+            if(!index) yamlFindKeys(line, line_index, 0, str_bds[index].str_beg, p_key_data, p_key_c);
+            else if(index == str_bds_c - 1) yamlFindKeys(line, line_index, str_bds[index].str_end + 1, strlen(line), p_key_data, p_key_c);
+            else yamlFindKeys(line, line_index, str_bds[index - 1].str_end + 1, str_bds[index].str_beg, p_key_data, p_key_c);
+        }
+    }
+    else yamlFindKeys(line, line_index, 0, strlen(line), p_key_data, p_key_c);
+
+    yamlFindValues(line, line_index, p_val_data, p_val_c, *p_key_data, *p_key_c);
+    if(str_bds) free(str_bds);
+}
+
+
+/* Remove all comments from the lines */
+static void yamlRemoveEmptyLines(char ***p_lines, int32_t *p_size) {
     int32_t l_index, r_index;
-    uint8_t is_list = false;
-    int32_t tmp_ws;
-    int32_t min_str, max_str;
-    char tmp_str[YML_LIST_NAME_BUF_SIZE] = {0};
-    uint8_t is_str = findString(line, line_index, &min_str, &max_str);
+    char **cpy_lines = (char**) calloc(1, sizeof(char*));
+    int32_t cpy_lines_c = 0;
 
-    // Count the amount of spaces
-    for(tmp_ws = 0; tmp_ws < strlen(line) && line[tmp_ws] == 0x20; tmp_ws++);
-
-    // Find the name of the list
-    for(l_index = strlen(line) - 1; l_index >= 0; l_index--) {
-        // Add chars to tmp_str in reverse order 
-        if(is_list) {
-            if(line[l_index] == 0x20) break;
-            tmp_str[r_index] = line[l_index];
-            r_index++;
-        }
-        else if(!is_str || (l_index < min_str || l_index > max_str)) {
-            if(line[l_index] == 0x3A)
-                is_list = true;
-        }
-    }
-
-    // Rearrange chars into p_name
-    if(is_list && p_name != NULL) {
-        (*p_name) = (char*) calloc(strlen(tmp_str), sizeof(char));
-        for(l_index = strlen(tmp_str) - 1, r_index = 0; l_index >= 0; l_index--, r_index++)
-            (*p_name)[r_index] = tmp_str[l_index];
-    }
-
-    if(is_list) (*p_ws) = tmp_ws;
-
-    return is_list;
-}
-
-
-/* Find list members per line */
-static void scanForLineValues(char **line_contents, size_t n_lines, int32_t line_beg, ListData **p_list_data, size_t *p_list_size) {
-    int32_t min_ws = (*p_list_data)[(*p_list_size) - 1].spaces_count;
-    int32_t max_ws = YML_LIST_NAME_BUF_SIZE;
-    int32_t n_ws, tmp_ws = YML_LIST_NAME_BUF_SIZE;
-    int32_t l_index, r_index, ch_index;
-    
-    int32_t list_index;
-    for(l_index = line_beg; l_index < n_lines && min_ws < max_ws; l_index++) {
-        n_ws = 0;
-        // Check if list is defined on line
-        if(!isKeyLine(line_contents[l_index], l_index, &tmp_ws, NULL)) {
-            // Skip all whitespaces
-            for(r_index = 0; r_index < strlen(line_contents[l_index]); r_index++, n_ws++)
-                if(line_contents[l_index][r_index] != 0x20) break;
-
-            if(n_ws <= max_ws && n_ws > min_ws) {
-                // Check for parsing error
-                // 0x2D == '-'
-                if(line_contents[l_index][r_index] == 0x2D && line_contents[l_index][r_index + 1] != 0x20) {
-                    PERR("expected whitespace after '-'", l_index + 1);
-                    exit(-1);
-                }
-
-                else if(line_contents[l_index][r_index] == 0x2D) {
-                    // Skip all whitespaces
-                    while(r_index < strlen(line_contents[l_index]) && line_contents[l_index][r_index] == 0x20) r_index++;
-                    // Check for parsing error
-                    if(r_index >= strlen(line_contents[l_index])) {
-                        PERR("expected value after '-'", l_index);
-                        exit(-1);
-                    }
-
-                    r_index++;
-                    list_index = findLastNonSubKeyIndex((*p_list_data), *p_list_size);
-                    (*p_list_data)[list_index].list_memb_size++;
-                    (*p_list_data)[list_index].list_membs = (char**) realloc((*p_list_data)[list_index].list_membs, (*p_list_data)[list_index].list_memb_size * sizeof(char*));
-                    (*p_list_data)[list_index].list_membs[(*p_list_data)[list_index].list_memb_size - 1] = (char*) calloc(1, sizeof(char));
-
-                    (*p_list_data)[list_index].list_membs[(*p_list_data)[list_index].list_memb_size - 1] = (char*) 
-                    calloc(strlen(line_contents[l_index]) - 1, sizeof(char));
-
-                    // Find the member
-                    for(ch_index = 0; r_index < strlen(line_contents[l_index]); r_index++, ch_index++)
-                        (*p_list_data)[list_index].list_membs[(*p_list_data)[(*p_list_size) - 1].list_memb_size - 1][ch_index] = line_contents[l_index][r_index];
-
-                    trimStr(&(*p_list_data)[list_index].list_membs[(*p_list_data)[list_index].list_memb_size - 1], TRIM_BOTH_SIDES);
-                }
+    // Iterate throuh every line and check if it isn't empty
+    uint8_t found_content = false;
+    for(l_index = 0; l_index < (*p_size); l_index++) {
+        for(r_index = 0; r_index < strlen((*p_lines)[l_index]); r_index++) {
+            if((*p_lines)[l_index][r_index] != 0x20) {
+                found_content = true;
+                break;
             }
         }
 
-        else {
-            handleMultiArray(line_contents[l_index], l_index, p_list_data, p_list_size);
-            return;
+        if(found_content && strlen((*p_lines)[l_index])) {
+            cpy_lines_c++;
+            cpy_lines = (char**) realloc((void*) cpy_lines, cpy_lines_c * sizeof(char*));
+            cpy_lines[cpy_lines_c - 1] = (char*) calloc(strlen((*p_lines)[l_index]) + 1, sizeof(char));
+            strncpy(cpy_lines[cpy_lines_c - 1], (*p_lines)[l_index], strlen((*p_lines)[l_index]));
+            found_content = false;
         }
-
-        if(tmp_ws < min_ws) break;
-        if(tmp_ws < max_ws) max_ws = tmp_ws;
     }
+
+    // Clean the current line information
+    for(l_index = 0; l_index < (*p_size); l_index++)
+        free((*p_lines)[l_index]);    
+    free((*p_lines));
+
+    (*p_lines) = cpy_lines;
+    (*p_size) = cpy_lines_c;
 }
 
 
-/* Add all non key members to listdata */
-static void findKeyMembers(char **line_contents, size_t line_size, int32_t line_index, ListData **p_list_data, size_t *p_list_size) {
+/* Remove all comments from all lines */
+static void yamlRemoveComments(char **lines, int32_t lines_c) {
     int32_t l_index, r_index;
-    
-    // Find the colon
-    for(l_index = 0; l_index < strlen(line_contents[line_index]); l_index++) {
-        if(line_contents[line_index][l_index] == 0x3A) break; 
-        if(line_contents[line_index][l_index] == 0x7B) {
-            printf("detected double array parenthesis, leaving %d\n", line_index + 1);
-            return;
-        }
-    }
+    char *tmp_str;
 
-    // Check for parsing error
-    l_index++;
-    if(l_index < strlen(line_contents[line_index]) && line_contents[line_index][l_index] != 0x20) {
-        PERR("expected whitespace after ':'", line_index + 1);
-        exit(-1);
-    }
-
-    // Skip all whitespaces
-    while(l_index < strlen(line_contents[line_index]) && line_contents[line_index][l_index] == 0x20) l_index++;
-    if(l_index >= strlen(line_contents[line_index])) return;
-
-    // Detected list of elements
-    // 0x5B == '['
-    if(line_contents[line_index][l_index] == 0x5B) {
-        uint8_t is_array_closed = false;
-        (*p_list_data)[(*p_list_size) - 1].list_memb_size++;
-        (*p_list_data)[(*p_list_size) - 1].list_membs = (char**) realloc((*p_list_data)[(*p_list_size) - 1].list_membs, sizeof(char*) * (*p_list_data)[(*p_list_size) - 1].list_memb_size);
-        (*p_list_data)[(*p_list_size) - 1].list_membs[(*p_list_data)[(*p_list_size) - 1].list_memb_size - 1] = (char*) calloc(1, sizeof(char));
-        r_index = 0;
-
-        // Find array contents
-        l_index++;
-        for(; l_index < strlen(line_contents[line_index]); l_index++) {
-            // 0x2C == ',' and 0x5D == ']'
-            if(line_contents[line_index][l_index] != 0x2C && line_contents[line_index][l_index] != 0x5D) {
-                (*p_list_data)[(*p_list_size) - 1].list_membs[(*p_list_data)[(*p_list_size) - 1].list_memb_size - 1][r_index] = line_contents[line_index][l_index];
-                r_index++;
-                (*p_list_data)[(*p_list_size) - 1].list_membs[(*p_list_data)[(*p_list_size) - 1].list_memb_size - 1] = (char*) 
-                realloc((*p_list_data)[(*p_list_size) - 1].list_membs[(*p_list_data)[(*p_list_size) - 1].list_memb_size - 1], (r_index + 1) * sizeof(char));
-            }
-
-            // Found comma in array, so reallocate memory for next string
-            else if(line_contents[line_index][l_index] == 0x2C) {
-                r_index = 0;
-                (*p_list_data)[(*p_list_size) - 1].list_memb_size++;
-                (*p_list_data)[(*p_list_size) - 1].list_membs = (char**) realloc((*p_list_data)[(*p_list_size) - 1].list_membs, ((*p_list_data)[(*p_list_size) - 1].list_memb_size + 1) * sizeof(char*));
-                (*p_list_data)[(*p_list_size) - 1].list_membs[(*p_list_data)[(*p_list_size) - 1].list_memb_size - 1] = (char*) calloc(1, sizeof(char));
-                
-                // Skip commas and whitespaces
-                while(line_contents[line_index][l_index] == 0x2C || line_contents[line_index][l_index] == 0x20) l_index++;
-                l_index--;
-            }
-
-            // Found the closing parenthesis
-            else if(line_contents[line_index][l_index] == 0x5D) {
-                is_array_closed = true;
+    // Check for comments on every line
+    uint8_t found_comment = false;
+    for(l_index = 0; l_index < lines_c; l_index++) {
+        for(r_index = 0; r_index < strlen(lines[l_index]); r_index++) {
+            if(lines[l_index][r_index] == 0x23) {
+                found_comment = true;
                 break;
             }
         }
         
-        // Check for the parsing error
-        if(!is_array_closed) {
-            PERR("expected closing parenthesis on line", line_index + 1);
-            exit(-1);
+        // Redo the string so it is uncommented
+        if(found_comment && r_index) {
+            tmp_str = (char*) calloc(r_index + 1, sizeof(char));
+            strncpy(tmp_str, lines[l_index], r_index);
+            tmp_str[r_index] = 0x00;
+
+            free(lines[l_index]);
+            lines[l_index] = (char*) calloc(r_index + 1, sizeof(char));
+            strncpy(lines[l_index], tmp_str, strlen(tmp_str));
+
+            found_comment = false;
+            free(tmp_str);
         }
     }
-
-    // No array members, but found a member on list line 
-    else if(l_index != strlen(line_contents[line_index]) - 1 && 
-    line_contents[line_index][l_index] != 0x7B) {
-        (*p_list_data)[(*p_list_size) - 1].list_memb_size++;
-        (*p_list_data)[(*p_list_size) - 1].list_membs = (char**) realloc((*p_list_data)[(*p_list_size) - 1].list_membs, (*p_list_data)[(*p_list_size) - 1].list_memb_size * sizeof(char*));
-        r_index = 0;
-        (*p_list_data)[(*p_list_size) - 1].list_membs[(*p_list_data)[(*p_list_size) - 1].list_memb_size - 1] = (char*) calloc(1, sizeof(char));
-        
-        // Write chars to member string
-        for(r_index = 0; l_index < strlen(line_contents[line_index]); l_index++, r_index++) {
-            (*p_list_data)[(*p_list_size) - 1].list_membs[(*p_list_data)[(*p_list_size) - 1].list_memb_size - 1] = (char*) 
-            realloc((*p_list_data)[(*p_list_size) - 1].list_membs[(*p_list_data)[(*p_list_size) - 1].list_memb_size - 1], sizeof(char) * (r_index + 1));
-            (*p_list_data)[(*p_list_size) - 1].list_membs[(*p_list_data)[(*p_list_size) - 1].list_memb_size - 1][r_index] = line_contents[line_index][l_index];
-        }
-    }
-
-    // Trim strings
-    for(l_index = 0; l_index < (*p_list_data)[(*p_list_size) - 1].list_memb_size; l_index++)
-        trimStr(&(*p_list_data)[(*p_list_size) - 1].list_membs[l_index], TRIM_BOTH_SIDES);
 }
 
 
-// Find all non list data inside a list
-static void populateListData(char **line_contents, size_t line_size, ListData **p_list_data, size_t *p_list_size) {
+// Sort the file data by lines
+static void yamlLines(char ***p_lines, int32_t *p_size, char *file_contents) {
+    int32_t l_index, r_index, ch_index;
+    (*p_size) = 0;
+
+    // Count all new lines
+    for(l_index = 0; l_index < strlen(file_contents); l_index++)
+        if(file_contents[l_index] == 0x0A) (*p_size)++;
+
+    // Allocate memory for lines
+    (*p_size)++;
+    (*p_lines) = (char**) calloc((*p_size), sizeof(char*));
+    for(l_index = 0; l_index < (*p_size); l_index++)
+        (*p_lines)[l_index] = (char*) calloc(YAML_CH_BUFFER_SIZE, sizeof(char));
+
+    // Populate lines data
+    r_index = 0; 
+    ch_index = 0;
+    for(l_index = 0; l_index < strlen(file_contents); l_index++) {
+        if(file_contents[l_index] != 0x0A) {
+            (*p_lines)[r_index][ch_index] = file_contents[l_index];
+            ch_index++;
+        }
+
+        else {
+            ch_index = 0; 
+            r_index++;
+        }
+    }
+}
+
+
+/* Main parsing callback function */
+void yamlParse(const char *file_name) {
     int32_t index;
-    uint8_t list_found = false;
-    char *tmp_name;
-    int32_t n_ws = 0;
-    size_t cpy_list_size;
-
-    (*p_list_size) = 0;
-    (*p_list_data) = (ListData*) calloc(1, sizeof(ListData));
-
-    // Find the list data
-    for(index = 0; index < line_size; index++) {
-        n_ws = 0;
-        // Check if list is found
-        if(line_contents[index]);
-        list_found = findKeyName(line_contents[index], index, &tmp_name, &n_ws, 0, strlen(line_contents[index]));
-
-        if(list_found) {           
-            // Realloc memory for new ListData struct instance
-            (*p_list_size)++;
-            cpy_list_size = (*p_list_size);
-            (*p_list_data) = (ListData*) realloc((*p_list_data), cpy_list_size * sizeof(ListData));
-            (*p_list_data)[cpy_list_size - 1].line_index = index;
-            (*p_list_data)[cpy_list_size - 1].list_memb_size = 0;
-            (*p_list_data)[cpy_list_size - 1].spaces_count = n_ws;
-            (*p_list_data)[cpy_list_size - 1].list_name = (char*) calloc(strlen(tmp_name), sizeof(char));
-            strcpy((*p_list_data)[(*p_list_size) - 1].list_name, tmp_name);
-            free(tmp_name);
-
-            // Find all list members
-            findKeyMembers(line_contents, line_size, index, p_list_data, &cpy_list_size);
-            handleMultiArray(line_contents[index], index, p_list_data, p_list_size);
-            scanForLineValues(line_contents, line_size, index + 1, p_list_data, p_list_size);
-
-            list_found = false;
-        }
-    }
-}
-
-
-/* Parse the yaml file */
-void parseYaml(const char *file_name) {
-    size_t l_index, r_index;
-    // Read all file contents into char buffer
-    size_t res;
     FILE *file;
     file = fopen(file_name, "rb");
-    if(!file) printf("%s%s%s\n", ERRMEBEG, "Failed to open file ", file_name);
 
+    // Check for file error
+    if(!file) {
+        printf("Failed to open file: %s\n", file_name);
+        exit(-2);
+    }
+
+    int res;
     // Get the file size
-    fseek(file, 0, SEEK_END);
-    size_t file_size = (size_t) ftell(file);
-    fseek(file, 0, SEEK_SET);
+    int32_t file_size;
+    res = fseek(file, 0, SEEK_END);
+    file_size = ftell(file);
+    res = fseek(file, 0, SEEK_SET);
+    if(res) printf("Failed to find file size for file %s\n", file_name);
 
-    // Read all file contents
-    char *contents = (char*) malloc(sizeof(char) * file_size);
-    res = fread(contents, sizeof(char), file_size, file);
-    if(!res) printf("%s%s%s\n", ERRMEBEG, "Failed to read file ", file_name);
-
-    // Extract all file information into lines
-    char **line_data = (char**) calloc(1, sizeof(char*));
-    size_t line_count = 1;
+    // Read all file data into contents variable
+    char *file_contents = (char*) calloc(file_size + 1, sizeof(char));
+    res = fread(file_contents, sizeof(char), file_size, file);
+    file_contents[file_size] = 0x00;
     
-    line_data[0] = (char*) calloc(1, sizeof(char));
-    r_index = 0;
+    char **lines;
+    int32_t line_c;
 
-    for(l_index = 0; l_index < strlen(contents); l_index++) {
-        // Allocate more memory for more lines
-        if(contents[l_index] == 0x0A) {
-            line_count++;
-            line_data = (char**) realloc((void*) line_data, line_count * sizeof(char*));
-            line_data[line_count - 1] = (char*) calloc(1, sizeof(char));
-            line_data[line_count - 1][0] = 0x20;
-            r_index = 0;
-        }
-        // Populate memory with line chars
-        else {
-            line_data[line_count - 1][r_index] = contents[l_index];
-            r_index++;
-            line_data[line_count - 1] = (char*) realloc(line_data[line_count - 1], sizeof(char) * (r_index + 1));
-        }
-    }
+    KeyData *key_data = (KeyData*) calloc(1, sizeof(KeyData));
+    int32_t key_c = 0;
 
-    ListData *list_data;
-    size_t list_size;
+    ValueData *val_data = (ValueData*) calloc(1, sizeof(ValueData));
+    int32_t val_c = 0;
 
-    removeComments(line_data, line_count);
-    cleanEmptyLines(&line_data, &line_count);
-    populateListData(line_data, line_count, &list_data, &list_size);
+    yamlLines(&lines, &line_c, file_contents);
+    yamlRemoveComments(lines, line_c);
+    yamlRemoveEmptyLines(&lines, &line_c);
 
-    for(l_index = 0; l_index < list_size; l_index++) {
-        printf("%s, %d:\n", list_data[l_index].list_name, list_data[l_index].spaces_count);
-        for(r_index = 0; r_index < list_data[l_index].list_memb_size; r_index++)
-            printf("--%s\n", list_data[l_index].list_membs[r_index]);
-    }
-        
+    for(index = 0; index < line_c; index++)
+        printf("LINE:%s\n", lines[index]);
 
-    parseCleanup(list_data, list_size);
-} 
+    for(index = 0; index < line_c; index++) 
+        yamlParseLine(lines[index], index, &key_data, &key_c, &val_data, &val_c);
 
-
-/* Perform cleanup after parsing */
-void parseCleanup(ListData *list_data, size_t b_size) {
-    size_t index;
-    for(index = 0; index < b_size; index++)
-        free(list_data[index].list_membs);
-
-    free(list_data);
+    for(index = 0; index < key_c; index++) 
+        printf("KEY: %s, line %d, wsp %d\n", key_data[index].key_name, key_data[index].line, key_data[index].ws_c);
 }
