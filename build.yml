@@ -1,22 +1,21 @@
-global: "{cc: gcc, cxx: g++}"
-  cc_flags: # [Wall, O3]
-
-  cxx_flags: # [Wall, O3] 
-    windows:
-      - s
-  include_path:
+global:
+  cc: gcc 
+  cxx: g++ 
+  cc_flags: [Wall, m64] 
+  cxx_flags: [Wall, m64, std=c++11]
+  include_path: 
     linux:
       - "/usr/include/freetype2"
-      - /usr/include/freetype2/freetype
+      - "/usr/include/freetype2/freetype"
     windows:
       - "C:/VulkanSDK/$ANY/"
       - "C:/freetype"
   src_dir: src/
   build_dir: build/
   project_name: deng
+  - hello world
 
-tasks:
-  # libsurface library
+tasks: 
   libsurface:
     type: dynamic_lib
     src:
@@ -25,20 +24,17 @@ tasks:
       - surface/vulkan_handler.c
       - surface/x11_surface.c
     
-  # libdas library
   libdas:
     type: dynamic_lib
     src:
       - das/das_handler.c
       - das/data_loader.c
 
-  # libcommon library
   libcommon:
     type: dynamic_lib
     src:
       - common/common.c
 
-  # DENG asset manager
   dam:
     type: exec
     src:

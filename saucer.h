@@ -8,4 +8,6 @@
 #include "yml_parser.h"
 #include "str_ext.h"
 
+#define MEMERR(x) printf("Memory allocation error: %s\n", x)
+
 #endif

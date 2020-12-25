@@ -2,16 +2,23 @@
 
 /* Remove whitespaces from end or beginning of the string 
  * and resize the buffer accordingly */
-void trimStr(char **p_str, TrimMode trim_mode) {
+uint8_t trimStr(char **p_str, TrimMode trim_mode) {
     int32_t l_index, r_index;
     uint8_t is_content;
     // Trim front
     if((*p_str)) {
         if(trim_mode == TRIM_FRONT || trim_mode == TRIM_BOTH_SIDES) {
             is_content = false;
-            char *tmp_str = (char*) calloc(((int32_t) strlen((*p_str))) + 1, sizeof(char));
-            strncpy(tmp_str, (*p_str), strlen((*p_str)));
-            tmp_str[strlen(*p_str)] = 0x00;
+            char *tmp_str = (char*) calloc (
+                strlen((*p_str)), 
+                sizeof(char)
+            );
+
+            strncpy (
+                tmp_str, 
+                (*p_str), 
+                strlen((*p_str))
+            );
             
             // Skip whitespaces and quotation marks
             for(l_index = 0; l_index < strlen(tmp_str); l_index++) {
@@ -21,16 +28,14 @@ void trimStr(char **p_str, TrimMode trim_mode) {
                 }
             }
 
-            if(!strlen(tmp_str) || !is_content) {
-                printf("quitting with index: %d\n", l_index);
-                (*p_str) = NULL;
-                return;
-            }
-
+            if(!strlen(tmp_str) || !is_content) return false;
 
             // Free and allocate space according to the new string size
             free((*p_str));
-            (*p_str) = (char*) calloc(((int32_t) strlen(tmp_str)) - l_index + 1, sizeof(char));
+            (*p_str) = (char*) calloc (
+                strlen(tmp_str) - l_index + 1, 
+                sizeof(char)
+            );
 
             for(r_index = 0; l_index < strlen(tmp_str); l_index++, r_index++)
                 (*p_str)[r_index] = tmp_str[l_index];
@@ -42,8 +47,17 @@ void trimStr(char **p_str, TrimMode trim_mode) {
         // Trim the end of the string
         if(trim_mode == TRIM_END || trim_mode == TRIM_BOTH_SIDES) {
             is_content = false;
-            char *tmp_str = (char*) calloc(((int32_t) strlen((*p_str))) + 1, sizeof(char));
-            strncpy(tmp_str, (*p_str), strlen((*p_str)));
+            char *tmp_str = (char*) calloc (
+                strlen((*p_str)) + 1, 
+                sizeof(char)
+            );
+            
+            strncpy (
+                tmp_str, 
+                (*p_str), 
+                strlen((*p_str))
+            );
+            
             tmp_str[strlen((*p_str))] = 0x00;
 
             // Skip all the whitespaces and quotation marks from the end
@@ -54,21 +68,31 @@ void trimStr(char **p_str, TrimMode trim_mode) {
                 }
             }
             
-            if(!strlen(tmp_str) || !is_content) {
-                (*p_str) = NULL;
-                return;
-            }
+            if(!strlen(tmp_str) || !is_content) return false;
 
             // Free and allocate space according to the new string size
             free((*p_str));
-            (*p_str) = (char*) calloc(l_index + 1, sizeof(char));
+            (*p_str) = (char*) calloc (
+                l_index + 1, 
+                sizeof(char)
+            );
 
             l_index++;
-            strncpy((*p_str), tmp_str, l_index);
+            
+            strncpy (
+                (*p_str), 
+                tmp_str, 
+                l_index
+            );
+            
             (*p_str)[l_index] = 0x00;
             free(tmp_str);
         }
+
+        return true;
     }
+
+    return false;
 }
 
 
@@ -85,15 +109,13 @@ void cropStr(char **p_str, TrimMode trim_mode, int c) {
     if(trim_mode == TRIM_END || trim_mode == TRIM_BOTH_SIDES)
         end_index = (int32_t) strlen((*p_str)) - ((int32_t) c);
     
-    printf("alloc test1\n");
     tmp_str = (char*) calloc(YAML_CH_BUFFER_SIZE, sizeof(char));
-    printf("alloc test2\n");
 
     // Copy chars to tmp_str
-    for(l_index = 0, r_index = 0; l_index < end_index - beg_index + 1; l_index++, r_index++)
+    for(l_index = beg_index, r_index = 0; l_index < end_index - beg_index + 1; l_index++, r_index++)
         tmp_str[r_index] = (*p_str)[l_index];
     
-    // Change *p_str pointer to tmp_str pointer 
+    // Change *p_str pointer to tmp_str pointer
     free((*p_str));
     (*p_str) = (char*) calloc(strlen(tmp_str) + 1, sizeof(char));
     strncpy((*p_str), tmp_str, strlen(tmp_str));
