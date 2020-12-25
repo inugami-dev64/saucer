@@ -623,10 +623,9 @@ static void yamlParseKeys(char **lines, int32_t line_c, int32_t *p_li_index, Key
 
 /* Key value parsing function */ 
 static void yamlParseValues(char **lines, int32_t line_c, KeyData *keys, int32_t key_c, int32_t key_index) {
-    int32_t l_index, r_index, ch_index;
+    int32_t l_index;
     uint8_t is_op = false;
     char operator;
-    char *tmp_str = (char*) calloc(YAML_CH_BUFFER_SIZE, sizeof(char));
 
     // Check if the key is not the last key
     int32_t min_ws = keys[key_index].ws_c;
@@ -656,7 +655,6 @@ static void yamlParseValues(char **lines, int32_t line_c, KeyData *keys, int32_t
     }
 
     // Check all lines following the
-    int32_t l_ws_c; 
     for(l_index = keys[key_index].line; l_index < line_c; l_index++) {
         // Check if current line is the first line
         if
@@ -883,7 +881,6 @@ void yamlParse(const char *file_name) {
             &key_c
         );
 
-    printf("test\n");
     for(l_index = 0; l_index < key_c; l_index++)
         yamlParseValues (
             lines, 
