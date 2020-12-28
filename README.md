@@ -1,1 +1,41 @@
-Saucer
+# Saucer
+
+## Introduction
+Saucer is a simple makefile generator that can be used to create different makefiles for
+different platforms using simple yaml configuration.
+
+## Usage
+In order to create makefile for current platform  
+`$ saucer build.yml`    
+For specific platform `-p` flag can be used. Following examples show how to create makefile for different platform than the one being detected right now.   
+Using Macos configuration: `$ saucer build.yml -p apple`   
+Using Windows configuration: `$ saucer build.yml -p windows`  
+Using Linux configuration: `$ saucer build.yml -p linux`  
+
+## YAML configuration
+Yaml configuration file can be created easily. Two most important keys in yaml configuration file are `premake` and `tasks` keys. Keys that support platform specific values can be specified with following subkeys:  
+`apple` for macos specific configuration value  
+`linux` for linux specific configuration value    
+`windows` for windows specific configuration value  
+### Premake
+Premake key can contain following subkeys:  
+* `cc`            - C compiler (semi-optional / non platfrom specific)
+* `cxx`           - C++ compiler (semi-optional / non platform specific)
+* `cc_flags`      - universal C compiler flags (optional / can be platform specific)
+* `cxx_flags`     - universal C++ compiler flags (optional / can be platform specific)
+* `include_path`  - include paths that are used by compiler (optional / can be platform specific)
+* `src_dir`       - path for all the source files (mandatory / non platform specific)
+* `build_dir`     - path for all the binary files (mandatory / non platform specific)
+* `project_name`  - name of the project (mandatory / non platform specific)  
+
+### Tasks
+Tasks key must contain at least one subkey with it's name being used as a task target.  
+Tasks subkey can contain following subkeys:  
+* `type`          - target type (mandatory / non platform specific)  
+* `src`           - target source files (mandatory / can be platform specific)
+* `deps`          - target dependencies (optional exec only / can be platform specific)    
+
+Task types can be following:  
+* `exec`          - executable target
+* `dynamic_lib`   - dynamic library target (.so for unix like systems / .dll for windows)
+* `static_lib`    - static library target

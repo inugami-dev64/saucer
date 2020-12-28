@@ -10,9 +10,6 @@
 #define true 1
 #define false 0
 
-#include <stdio.h>
-#include <stdlib.h>
-
 typedef struct StrBounds {
     int32_t str_beg;
     int32_t str_end;
@@ -61,6 +58,6 @@ typedef struct KeyPosInfo {
     static void yamlFindKeys(char *line, int32_t line_index, int32_t min_index, int32_t max_index, KeyData **p_key_data, int32_t *p_key_c);
 #endif
 
-void yamlParse(const char *file_name);
+void yamlParse(KeyData **p_keys, int32_t *p_key_c, char *file_name);
 
 #endif

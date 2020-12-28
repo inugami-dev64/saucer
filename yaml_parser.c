@@ -28,7 +28,7 @@ static uint8_t yamlSearchString(char *line, int32_t line_index, StrBounds **p_st
 
             if(!p_tmp) {
                 MEMERR("failed to reallocate memory for quomark charinfos");
-                exit(-3);
+                exit(ERRC_MEM);
             }
 
             qms = p_tmp;  
@@ -50,19 +50,19 @@ static uint8_t yamlSearchString(char *line, int32_t line_index, StrBounds **p_st
     // Check for parsing errors
     if(s_quo_c % 2) {
         PERR("unclosed single quotation mark string", line_index + 1);
-        exit(-1);
+        exit(ERRC_PARSE);
     }
 
     if(d_quo_c % 2) {
         PERR("unclosed double quotation mark string", line_index + 1);
-        exit(-1);
+        exit(ERRC_PARSE);
     }
 
     for(index = 0; index < qm_c - 1; index += 2) {
         // Check for parsing error
         if(qms[index].ch != qms[index + 1].ch) {
             PERR("quotation marks (0x27 and 0x22) are not allowed to be used inside strings", line_index + 1);
-            exit(-1);
+            exit(ERRC_PARSE);
         }
 
         (*p_str_bds_c)++;
@@ -74,7 +74,7 @@ static uint8_t yamlSearchString(char *line, int32_t line_index, StrBounds **p_st
 
         if(!p_tmp) {
             MEMERR("failed to reallocate memory for string bounds");
-            exit(-3);
+            exit(ERRC_MEM);
         }
         
         (*p_str_bds) = p_tmp;
@@ -107,7 +107,7 @@ static uint8_t yamlFindKeyNameBounds(char *line, int32_t line_index, int32_t min
 
             if(!p_tmp) {
                 MEMERR("failed to reallocate memory for KeyPosInfo");
-                exit(-3);
+                exit(ERRC_MEM);
             }
 
             (*p_kpi) = p_tmp;
@@ -145,7 +145,7 @@ static uint8_t yamlFindKeyNameBounds(char *line, int32_t line_index, int32_t min
     // Check for parsing error
     if(is_array_beg && !is_array_cl) {
         PERR("unclosed array", line_index + 1);
-        exit(-1);
+        exit(ERRC_PARSE);
     }
 
     else if(is_array_beg && is_array_cl)
@@ -186,7 +186,7 @@ static void yamlExtractList(char *list, KeyData *p_key) {
     // Populate ValueData instance
     for(l_index = 1, ch_index = 0; l_index < strlen(list); l_index++) {
         if(list[l_index] == 0x2C || list[l_index] == 0x5D) {
-            // trimStr(&tmp_str, TRIM_BOTH_SIDES);
+            trimStr(&tmp_str, TRIM_BOTH_SIDES);
             yamlPushKeyValue(tmp_str, p_key);
             ch_index = 0;
         }      
@@ -225,7 +225,7 @@ static void yamlGetKeyLineValues(char *line, KeyData *p_key, char *p_op, uint8_t
 
             if(!p_tmp) {
                 MEMERR("failed to allocate memory for tmp_str");
-                exit(-3);
+                exit(ERRC_MEM);
             }
             tmp_str = p_tmp;
         }
@@ -329,7 +329,7 @@ static uint8_t yamlGetGenLineValues(char *line, KeyData *p_key, int32_t min_ws, 
 
                         if(!p_tmp) {
                             MEMERR("failed to reallocate tmp_str");
-                            exit(-3);
+                            exit(ERRC_MEM);
                         }
 
                         tmp_str = p_tmp;
@@ -352,7 +352,7 @@ static uint8_t yamlGetGenLineValues(char *line, KeyData *p_key, int32_t min_ws, 
 
                     if(!p_tmp) {
                         MEMERR("failed to reallocate tmp_str");
-                        exit(-3);
+                        exit(ERRC_MEM);
                     }
 
                     tmp_str = p_tmp;
@@ -391,7 +391,7 @@ static uint8_t yamlGetGenLineValues(char *line, KeyData *p_key, int32_t min_ws, 
 
                 if(!p_tmp) {
                     MEMERR("failed to reallocate tmp_str");
-                    exit(-3);
+                    exit(ERRC_MEM);
                 }
 
                 tmp_str = p_tmp;
@@ -437,6 +437,17 @@ static uint8_t yamlGetGenLineValues(char *line, KeyData *p_key, int32_t min_ws, 
 /* Push value to KeyData instance */
 static void yamlPushKeyValue(char *val, KeyData *p_key) {
     // Check for quotation in the beginning
+    char *tmp_str = (char*) calloc (
+        strlen(val) + 1,
+        sizeof(char)
+    );
+
+    strncpy (
+        tmp_str,
+        val,
+        strlen(val)
+    );
+
     char mk = 0x00;
     if
     (
@@ -445,7 +456,8 @@ static void yamlPushKeyValue(char *val, KeyData *p_key) {
     ) mk = val[0];
 
     // Check for quotation marks in the end
-    if(val[strlen(val) - 1] == mk) cropStr(&val, TRIM_BOTH_SIDES, 1);
+    if(val[strlen(val) - 1] == mk) 
+        cropStr(&tmp_str, TRIM_BOTH_SIDES, 1);
     
     p_key->key_val_c++;
     char **pp_tmp = (char**) realloc (
@@ -455,21 +467,22 @@ static void yamlPushKeyValue(char *val, KeyData *p_key) {
 
     if(!pp_tmp) {
         MEMERR("Failed to reallocate memory for key values");
-        exit(-3);
+        exit(ERRC_MEM);
     }
 
     p_key->key_vals = pp_tmp;
     p_key->key_vals[p_key->key_val_c - 1] = (char*) calloc (
-        strlen(val) + 1,
+        strlen(tmp_str) + 1,
         sizeof(char)
     );
 
     strncpy (
         p_key->key_vals[p_key->key_val_c - 1],
-        val,
-        strlen(val)
+        tmp_str,
+        strlen(tmp_str)
     );
 
+    free(tmp_str);
 }
 
 
@@ -530,7 +543,7 @@ static void yamlFindKeys(char *line, int32_t line_index, int32_t min_index, int3
 
         if(!p_tmp) {
             MEMERR("failed to reallocate memory for key data");
-            exit(-3);
+            exit(ERRC_MEM);
         }
 
         (*p_key_data) = p_tmp;
@@ -714,7 +727,7 @@ static void yamlRemoveEmptyLines(char ***p_lines, int32_t *p_size) {
 
             if(!pp_tmp) {
                 MEMERR("failed to allocate memory for cpy_lines");
-                exit(-3);
+                exit(ERRC_MEM);
             }
 
             cpy_lines = pp_tmp;
@@ -827,15 +840,15 @@ static void yamlLines(char ***p_lines, int32_t *p_size, char *file_contents) {
 
 
 /* Main parsing callback function */
-void yamlParse(const char *file_name) {
-    int32_t l_index, r_index;
+void yamlParse(KeyData **p_key_data, int32_t *p_key_c, char *file_name) {
+    int32_t l_index;
     FILE *file;
     file = fopen(file_name, "rb");
 
     // Check for file error
     if(!file) {
         printf("Failed to open file: %s\n", file_name);
-        exit(-2);
+        exit(ERRC_FILE);
     }
 
     int res;
@@ -883,27 +896,13 @@ void yamlParse(const char *file_name) {
 
     for(l_index = 0; l_index < key_c; l_index++)
         yamlParseValues (
-            lines, 
-            line_c, 
+            lines,
+            line_c,
             key_data,
             key_c,
             l_index
         );
 
-    for(l_index = 0; l_index < key_c; l_index++)  {
-        printf (
-            "KEY: %s, line %d, wsp %d, val_c %d, is_sub_key %d\n", 
-            key_data[l_index].key_name, key_data[l_index].line, 
-            key_data[l_index].ws_c,
-            key_data[l_index].key_val_c,
-            key_data[l_index].is_sub_key
-        );
-
-        for(r_index = 0; r_index < key_data[l_index].key_val_c; r_index++) {
-            printf (
-                "--VAL: %s\n",
-                key_data[l_index].key_vals[r_index]
-            );
-        }
-    }
+    (*p_key_data) = key_data;
+    (*p_key_c) = key_c;
 }

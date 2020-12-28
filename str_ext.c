@@ -3,89 +3,91 @@
 /* Remove whitespaces from end or beginning of the string 
  * and resize the buffer accordingly */
 uint8_t trimStr(char **p_str, TrimMode trim_mode) {
-    int32_t l_index, r_index;
+    int32_t l_index;
     uint8_t is_content;
     // Trim front
     if((*p_str)) {
         if(trim_mode == TRIM_FRONT || trim_mode == TRIM_BOTH_SIDES) {
             is_content = false;
-            char *tmp_str = (char*) calloc (
-                strlen((*p_str)), 
-                sizeof(char)
-            );
-
-            strncpy (
-                tmp_str, 
-                (*p_str), 
-                strlen((*p_str))
-            );
             
             // Skip whitespaces and quotation marks
-            for(l_index = 0; l_index < strlen(tmp_str); l_index++) {
-                if(tmp_str[l_index] != 0x20) {
+            for(l_index = 0; l_index < strlen((*p_str)); l_index++) {
+                if((*p_str)[l_index] != 0x20) {
                     is_content = true;
                     break;
                 }
             }
 
-            if(!strlen(tmp_str) || !is_content) return false;
-
-            // Free and allocate space according to the new string size
-            free((*p_str));
-            (*p_str) = (char*) calloc (
-                strlen(tmp_str) - l_index + 1, 
+            if(!strlen((*p_str)) || !is_content) return false;
+            
+            // Copy data to tmp_str
+            char *tmp_str = (char*) calloc (
+                strlen((*p_str)) - l_index + 1, 
                 sizeof(char)
             );
 
-            for(r_index = 0; l_index < strlen(tmp_str); l_index++, r_index++)
-                (*p_str)[r_index] = tmp_str[l_index];
+            strncpy (
+                tmp_str,
+                (*p_str) + l_index,
+                strlen((*p_str)) - l_index
+            );
+
+            // Copy data from tmp_str back to (*p_str)
+            free((*p_str));
             
-            (*p_str)[r_index] = 0x00;
+            (*p_str) = (char*) calloc (
+                strlen(tmp_str) + 1,
+                sizeof(char)
+            );
+
+            strncpy (
+                (*p_str),
+                tmp_str,
+                strlen(tmp_str)
+            );
+
             free(tmp_str);
         }
         
         // Trim the end of the string
         if(trim_mode == TRIM_END || trim_mode == TRIM_BOTH_SIDES) {
             is_content = false;
-            char *tmp_str = (char*) calloc (
-                strlen((*p_str)) + 1, 
-                sizeof(char)
-            );
-            
-            strncpy (
-                tmp_str, 
-                (*p_str), 
-                strlen((*p_str))
-            );
-            
-            tmp_str[strlen((*p_str))] = 0x00;
 
             // Skip all the whitespaces and quotation marks from the end
-            for(l_index = strlen(tmp_str) - 1; l_index >= 0; l_index--) {
-                if(tmp_str[l_index] != 0x20) {
+            for(l_index = strlen((*p_str)) - 1; l_index >= 0; l_index--) {
+                if((*p_str)[l_index] != 0x20) {
                     is_content = true;
                     break;
                 }
             }
             
-            if(!strlen(tmp_str) || !is_content) return false;
+            if(!strlen((*p_str)) || !is_content) return false;
 
-            // Free and allocate space according to the new string size
-            free((*p_str));
-            (*p_str) = (char*) calloc (
-                l_index + 1, 
+            // Allocate memory for tmp_str and populate it
+            char *tmp_str = (char*) calloc(
+                l_index + 2, 
                 sizeof(char)
             );
 
-            l_index++;
-            
             strncpy (
-                (*p_str), 
-                tmp_str, 
-                l_index
+                tmp_str,
+                (*p_str),
+                l_index + 1
             );
+
+            free(*p_str);
             
-            (*p_str)[l_index] = 0x00;
+            (*p_str) = (char*) calloc (
+                strlen(tmp_str) + 1,
+                sizeof(char)
+            );
+
+            strncpy (
+                (*p_str),
+                tmp_str,
+                strlen(tmp_str)
+            );
+
             free(tmp_str);
         }
 
@@ -98,7 +100,6 @@ uint8_t trimStr(char **p_str, TrimMode trim_mode) {
 
 // Crop characters from string
 void cropStr(char **p_str, TrimMode trim_mode, int c) {
-    int32_t l_index, r_index;
     int32_t beg_index = 0; 
     int32_t end_index = (int32_t) strlen((*p_str));
     char *tmp_str;
@@ -109,17 +110,21 @@ void cropStr(char **p_str, TrimMode trim_mode, int c) {
     if(trim_mode == TRIM_END || trim_mode == TRIM_BOTH_SIDES)
         end_index = (int32_t) strlen((*p_str)) - ((int32_t) c);
     
-    tmp_str = (char*) calloc(YAML_CH_BUFFER_SIZE, sizeof(char));
+    tmp_str = (char*) calloc (
+        (end_index + 1) - beg_index,
+        sizeof(char)
+    );
 
-    // Copy chars to tmp_str
-    for(l_index = beg_index, r_index = 0; l_index < end_index - beg_index + 1; l_index++, r_index++)
-        tmp_str[r_index] = (*p_str)[l_index];
+    strncpy (
+        tmp_str,
+        (*p_str) + beg_index,
+        end_index - beg_index
+    );
     
     // Change *p_str pointer to tmp_str pointer
     free((*p_str));
     (*p_str) = (char*) calloc(strlen(tmp_str) + 1, sizeof(char));
     strncpy((*p_str), tmp_str, strlen(tmp_str));
-
     free(tmp_str);
 }
 
@@ -157,6 +162,47 @@ void removeComments(char **line_contents, size_t n_lines) {
             line_contents[l_index] = (char*) calloc(1, sizeof(char));
             line_contents[l_index][0] = 0x20;
         }
+    }
+}
+
+
+/* Combine two string arrays into one array */
+void cmbStrArr (
+    char **arr1, 
+    int32_t len1,
+    char **arr2, 
+    int32_t len2,
+    char ***p_out_arr,
+    int32_t *p_out_len
+) {
+    if(!len1 && !len2) return;
+
+    int32_t l_index, r_index;
+    (*p_out_len) = len1 + len2;
+    (*p_out_arr) = (char**) calloc (
+        (*p_out_len),
+        sizeof(char*)
+    );
+
+    // Copy arr1 to out_arr
+    for(l_index = 0, r_index = 0; l_index < len1; l_index++, r_index++)
+        (*p_out_arr)[r_index] = arr1[l_index];
+
+    // Copy arr2 to out_arr
+    for(l_index = 0; l_index < len2; l_index++, r_index++)
+        (*p_out_arr)[r_index] = arr2[l_index];
+}
+
+
+/* Make all chars in string to higher case */
+void strToHigherCase(char **p_str) {
+    int32_t l_index;
+    for(l_index = 0; l_index < strlen((*p_str)); l_index++) {
+        if
+        (
+            (*p_str)[l_index] >= MIN_LOWER_CASE &&
+            (*p_str)[l_index] < MAX_LOWER_CASE 
+        ) (*p_str)[l_index] -= CAPS_ADDABLE;
     }
 }
 

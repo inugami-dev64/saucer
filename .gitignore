@@ -1,1 +1,4 @@
-build.yml
+.vscode/
+build_test.yml
+*.o
+saucer
