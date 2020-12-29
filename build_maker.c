@@ -1,8 +1,8 @@
 #define BUILD_MAKER_PRIVATE
 #include "saucer.h"
 
-extern uint8_t is_cpp = false;
-extern uint8_t is_c = false;
+static uint8_t is_cpp = false;
+static uint8_t is_c = false;
 
 /* Find the source file extension */
 static void sauFindSrcFileExt(char *file) {

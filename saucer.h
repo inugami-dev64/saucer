@@ -7,6 +7,7 @@
 
 #include "yaml_parser.h"
 #include "build_maker.h"
+#include "script_man.h"
 #include "make_writer.h"
 #include "str_ext.h"
 

@@ -176,7 +176,6 @@ void cmbStrArr (
     int32_t *p_out_len
 ) {
     if(!len1 && !len2) return;
-
     int32_t l_index, r_index;
     (*p_out_len) = len1 + len2;
     (*p_out_arr) = (char**) calloc (
