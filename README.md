@@ -39,3 +39,7 @@ Task types can be following:
 * `exec`          - executable target
 * `dynamic_lib`   - dynamic library target (.so for unix like systems / .dll for windows)
 * `static_lib`    - static library target
+
+## Building
+To install Saucer use following make command:  
+`$ sudo make clean install`
