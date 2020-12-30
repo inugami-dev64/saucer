@@ -364,7 +364,7 @@ static void sauFindPremakeValues (
 
         else if(!strcmp(keys[l_index].key_name, "include_path")) {
             p_bi->premake.incl_info.all.paths = keys[l_index].key_vals;
-            p_bi->premake.lib_info.all.path_c = keys[l_index].key_val_c;
+            p_bi->premake.incl_info.all.path_c = keys[l_index].key_val_c;
 
             sauFindPlatformValues (
                 keys,
@@ -660,8 +660,6 @@ static void sauAssemblePremake (
     BuildInfo *p_bi
 ) {
     int32_t l_index;
-    sauInitPremakeValues(p_bi);
-
     uint8_t is_premake = false;
     int32_t pre_beg_index, pre_end_index;
     // Find premake key beginning index
@@ -1120,6 +1118,7 @@ void sauAssembleBuildData (
             base_ws = keys[l_index].ws_c;
     }
 
+    sauInitPremakeValues(p_bi);
     sauAssemblePremake(keys, key_c, p_bi);
     sauAssembleTasks(keys, key_c, p_bi);
     sauFindLinks(keys, key_c, p_bi);

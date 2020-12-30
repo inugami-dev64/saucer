@@ -347,8 +347,9 @@ static uint8_t sauWritePlatformFlagVar (
     char *var_name,
     FILE *file
 ) {
-    char **tmp_str_arr;
-    int32_t tmp_len;
+    char **tmp_str_arr = NULL;
+    int32_t tmp_len = 0;
+
     cmbStrArr (
         all_str,
         all_str_c,
@@ -1149,7 +1150,8 @@ static void sauWriteMainTask (
             offset = 0;
             sprintf (
                 tmp_str + offset,
-                "\t$(CC) -shared -o $(%s) $(%s)",
+                "\t$(%s) -shared -o $(%s) $(%s)",
+                C_COMPILER_VAR,
                 target,
                 objs
             );
@@ -1174,7 +1176,8 @@ static void sauWriteMainTask (
             offset = 0;
             sprintf (
                 tmp_str + offset,
-                "\t$(CXX) -shared -o $(%s) $(%s)",
+                "\t$(%s) -shared -o $(%s) $(%s)",
+                CPP_COMPILER_VAR,
                 target,
                 objs
             );
@@ -1232,7 +1235,8 @@ static void sauWriteMainTask (
         if(!cxx_src_c) {
             sprintf (
                 tmp_str + offset,
-                "\t$(CC) -o $(%s) $(%s)",
+                "\t$(%s) -o $(%s) $(%s)",
+                C_COMPILER_VAR,
                 target,
                 objs
             );
@@ -1241,7 +1245,8 @@ static void sauWriteMainTask (
         else {
             sprintf (
                 tmp_str + offset,
-                "\t$(CXX) -o $(%s) $(%s)",
+                "\t$(%s) -o $(%s) $(%s)",
+                CPP_COMPILER_VAR,
                 target,
                 objs
             );
