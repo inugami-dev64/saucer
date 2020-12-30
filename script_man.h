@@ -1,9 +1,9 @@
 #ifndef SCRIPT_MAN_H
 #define SCRIPT_MAN_H
 
-#define APPLE_DEF_SHELL     "#!/bin/zsh\n\0"
-#define LINUX_DEF_SHELL     "#!/bin/bash\n\0"
-#define SCRIPT_NAME         "init\0"
+#define APPLE_DEF_SHELL     "#!/bin/zsh\n"
+#define LINUX_DEF_SHELL     "#!/bin/bash\n"
+#define SCRIPT_NAME         "init"
 
 #define OBJ_I   0
 #define MAIN_I  1

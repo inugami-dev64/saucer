@@ -7,6 +7,9 @@ static uint8_t is_incl_path = false;
 static uint8_t is_lib_path = false;
 static uint8_t is_library_targets = false;
 
+static uint8_t is_cpy = false;
+static uint8_t is_link = false;
+
 static char **lib_targets;
 static int32_t lib_tar_c;
 
@@ -1505,6 +1508,7 @@ static void sauWriteSubtask (
 }
 
 
+/* Write initial task into makefile (executed via generated script) */
 static void sauWriteInitTask (
     PlatformInfo pi,
     FILE *file
@@ -1573,6 +1577,7 @@ static void sauWriteInitTask (
 }
 
 
+/* Write default make task (performs all the tasks) */
 static void sauWriteAllTask (
     TaskInfo *tasks,
     int32_t task_c,
@@ -1588,6 +1593,27 @@ static void sauWriteAllTask (
         4,
         file
     );
+
+    // Check for copy and link targets
+    if(is_cpy) {
+        fwrite (
+            " " \
+            CPY_TASK,
+            sizeof(char),
+            1 + strlen(CPY_TASK),
+            file
+        );
+    }
+
+    if(is_link) {
+        fwrite (
+            " " \
+            LINK_TASK,
+            sizeof(char),
+            1 + strlen(LINK_TASK),
+            file
+        );
+    }
 
     for(l_index = 0; l_index < task_c; l_index++) {
         tmp_str = (char*) calloc (
@@ -1614,6 +1640,370 @@ static void sauWriteAllTask (
     }
 
     fwrite("\n", sizeof(char), 1, file);
+}
+
+
+/* Write copy task if it exists */
+static void sauWriteCopyTask (
+    CopyInfo *p_cpy_info,
+    PlatformInfo pi,
+    char *pr_name,
+    FILE *file
+) {
+    int32_t l_index;
+    char *tmp_str;
+
+    char **cpy_dsts = NULL;
+    int32_t dst_c = 0;
+    char **cpy_srcs = NULL;
+    int32_t src_c = 0;
+
+    // Verify copy task existance and 
+    switch (pi)
+    {
+    case PLATFORM_APPLE:
+        if
+        (
+            !p_cpy_info->all.cpy_c &&
+            !p_cpy_info->apple_i.cpy_c
+        ) return;
+
+        cmbStrArr (
+            p_cpy_info->all.dsts,
+            p_cpy_info->all.cpy_c,
+            p_cpy_info->apple_i.dsts,
+            p_cpy_info->apple_i.cpy_c,
+            &cpy_dsts,
+            &dst_c
+        );
+
+        cmbStrArr (
+            p_cpy_info->all.srcs,
+            p_cpy_info->all.cpy_c,
+            p_cpy_info->apple_i.srcs,
+            p_cpy_info->apple_i.cpy_c,
+            &cpy_srcs,
+            &src_c
+        );
+        
+        break;
+    
+    case PLATFORM_LINUX:
+        if
+        (
+            !p_cpy_info->all.cpy_c &&
+            !p_cpy_info->linux_i.cpy_c
+        ) return;
+
+        cmbStrArr (
+            p_cpy_info->all.dsts,
+            p_cpy_info->all.cpy_c,
+            p_cpy_info->linux_i.dsts,
+            p_cpy_info->linux_i.cpy_c,
+            &cpy_dsts,
+            &dst_c
+        );
+
+        cmbStrArr (
+            p_cpy_info->all.srcs,
+            p_cpy_info->all.cpy_c,
+            p_cpy_info->linux_i.srcs,
+            p_cpy_info->linux_i.cpy_c,
+            &cpy_srcs,
+            &src_c
+        );
+
+        break;
+
+    case PLATFORM_WINDOWS:
+        if 
+        (
+            !p_cpy_info->all.cpy_c &&
+            !p_cpy_info->win_i.cpy_c
+        ) return;
+
+        cmbStrArr (
+            p_cpy_info->all.dsts,
+            p_cpy_info->all.cpy_c,
+            p_cpy_info->win_i.dsts,
+            p_cpy_info->win_i.cpy_c,
+            &cpy_dsts,
+            &dst_c
+        );
+
+        cmbStrArr (
+            p_cpy_info->all.srcs,
+            p_cpy_info->all.cpy_c,
+            p_cpy_info->win_i.srcs,
+            p_cpy_info->win_i.cpy_c,
+            &cpy_srcs,
+            &src_c
+        );
+
+        break;
+    
+    default:
+        break;
+    }
+
+    is_cpy = true;
+    fwrite (
+        "\n" \
+        CPY_TASK \
+        ": ." \
+        SCRIPT_NAME \
+        "\n", 
+        sizeof(char), 
+        strlen(CPY_TASK) + strlen(SCRIPT_NAME) + 5, 
+        file
+    );
+    
+    // Write the copy task
+    switch (pi)
+    {
+    case PLATFORM_WINDOWS:
+        for(l_index = 0; l_index < src_c; l_index++) {
+            tmp_str = (char*) calloc (
+                strlen(cpy_srcs[l_index]) + strlen(cpy_dsts[l_index]) + 
+                strlen(BUILD_DIR_VAR) + strlen(pr_name) + 21,
+                sizeof(char)
+            );
+
+            sauFixWindowsPaths(&cpy_srcs[l_index], 1);
+
+            sprintf (
+                tmp_str,
+                "\tXcopy /E /I %s $(%s)\\%s\\%s\n",
+                cpy_srcs[l_index],
+                BUILD_DIR_VAR,
+                pr_name,
+                cpy_dsts[l_index]
+            );
+
+            fwrite (
+                tmp_str,
+                sizeof(char),
+                strlen(tmp_str),
+                file
+            );
+
+            free(tmp_str);
+        }
+        break;
+
+    case PLATFORM_APPLE:
+    case PLATFORM_LINUX:
+        for(l_index = 0; l_index < src_c; l_index++) {
+            tmp_str = (char*) calloc (
+                strlen(cpy_srcs[l_index]) + strlen(cpy_dsts[l_index]) + 
+                strlen(BUILD_DIR_VAR) + strlen(pr_name) + 15,
+                sizeof(char)
+            );
+
+            sprintf (
+                tmp_str,
+                "\tcp -r %s $(%s)/%s/%s\n",
+                cpy_srcs[l_index],
+                BUILD_DIR_VAR,
+                pr_name,
+                cpy_dsts[l_index]
+            );
+
+            fwrite (
+                tmp_str,
+                sizeof(char),
+                strlen(tmp_str),
+                file
+            );
+
+            free(tmp_str);
+        }
+        break;
+    
+    default:
+        break;
+    }
+}
+
+
+/* Write sym link task if it exists */
+static void sauWriteLinkTask (
+    LinkInfo *p_link_info,
+    PlatformInfo pi,
+    char *pr_name,
+    FILE *file
+) {
+    int32_t l_index;
+    char *tmp_str;
+
+    char **link_tar = NULL;
+    int32_t tar_c = 0;
+    char **link_src = NULL;
+    int32_t src_c = 0;
+
+    // Verify link task existance and combine platform specific links with general links
+    switch (pi)
+    {
+    case PLATFORM_APPLE:
+        if
+        (
+            !p_link_info->all.link_c &&
+            !p_link_info->apple_i.link_c
+        ) return;
+
+        cmbStrArr (
+            p_link_info->all.links,
+            p_link_info->all.link_c,
+            p_link_info->apple_i.links,
+            p_link_info->apple_i.link_c,
+            &link_tar,
+            &tar_c
+        );
+
+        cmbStrArr (
+            p_link_info->all.srcs,
+            p_link_info->all.link_c,
+            p_link_info->apple_i.srcs,
+            p_link_info->apple_i.link_c,
+            &link_src,
+            &src_c
+        );
+        
+        break;
+    
+    case PLATFORM_LINUX:
+        if
+        (
+            !p_link_info->all.link_c &&
+            !p_link_info->linux_i.link_c
+        ) return;
+
+        cmbStrArr (
+            p_link_info->all.links,
+            p_link_info->all.link_c,
+            p_link_info->linux_i.links,
+            p_link_info->linux_i.link_c,
+            &link_tar,
+            &tar_c
+        );
+
+        cmbStrArr (
+            p_link_info->all.srcs,
+            p_link_info->all.link_c,
+            p_link_info->linux_i.srcs,
+            p_link_info->linux_i.link_c,
+            &link_src,
+            &src_c
+        );
+
+        break;
+
+    case PLATFORM_WINDOWS:
+        if 
+        (
+            !p_link_info->all.link_c &&
+            !p_link_info->win_i.link_c
+        ) return;
+
+        cmbStrArr (
+            p_link_info->all.links,
+            p_link_info->all.link_c,
+            p_link_info->win_i.links,
+            p_link_info->win_i.link_c,
+            &link_tar,
+            &tar_c
+        );
+
+        cmbStrArr (
+            p_link_info->all.srcs,
+            p_link_info->all.link_c,
+            p_link_info->win_i.srcs,
+            p_link_info->win_i.link_c,
+            &link_src,
+            &src_c
+        );
+
+        break;
+    
+    default:
+        break;
+    }
+
+    is_link = true;
+    fwrite (
+        "\n" \
+        LINK_TASK \
+        ": ." \
+        SCRIPT_NAME \
+        "\n", 
+        sizeof(char), 
+        strlen(LINK_TASK) + strlen(SCRIPT_NAME) + 5, 
+        file
+    );
+    
+    // Write the copy task
+    switch (pi)
+    {
+    case PLATFORM_WINDOWS:
+        for(l_index = 0; l_index < src_c; l_index++) {
+            tmp_str = (char*) calloc (
+                strlen(link_src[l_index]) + strlen(link_tar[l_index]) + 
+                strlen(pr_name) + strlen(BUILD_DIR_VAR) + 19,
+                sizeof(char)
+            );
+
+            sprintf (
+                tmp_str,
+                "\tmklink /J %s $(%s)\\%s\\%s\n",
+                link_tar[l_index],
+                BUILD_DIR_VAR,
+                pr_name,
+                link_src[l_index]
+            );
+
+            fwrite (
+                tmp_str,
+                sizeof(char),
+                strlen(tmp_str),
+                file
+            );
+
+            free(tmp_str);
+        }
+        break;
+
+    case PLATFORM_APPLE:
+    case PLATFORM_LINUX:
+        for(l_index = 0; l_index < src_c; l_index++) {
+            tmp_str = (char*) calloc (
+                strlen(link_src[l_index]) + strlen(link_tar[l_index]) +
+                strlen(BUILD_DIR_VAR) + strlen(pr_name) + 36,
+                sizeof(char)
+            );
+
+            sprintf (
+                tmp_str,
+                "\tln -s $$(realpath %s) $$(realpath $(%s)/%s/%s)\n",
+                link_src[l_index],
+                BUILD_DIR_VAR,
+                pr_name,
+                link_tar[l_index]
+            );
+
+            fwrite (
+                tmp_str,
+                sizeof(char),
+                strlen(tmp_str),
+                file
+            );
+
+            free(tmp_str);
+        }
+        break;
+    
+    default:
+        break;
+    }
 }
 
 
@@ -1805,6 +2195,27 @@ static void sauWriteClean (
     {
     case PLATFORM_APPLE:
     case PLATFORM_LINUX:
+        tmp_str = (char*) calloc (
+            strlen(BUILD_DIR_VAR) + strlen(pr_name) + 16,
+            sizeof(char)
+        );
+
+        sprintf (
+            tmp_str,
+            "\trm -rf $(%s)/%s/*\n",
+            BUILD_DIR_VAR,
+            pr_name
+        );
+
+        fwrite (
+            tmp_str,
+            sizeof(char),
+            strlen(tmp_str),
+            file
+        );
+
+        free(tmp_str);
+
         for(l_index = 0; l_index < task_c; l_index++) {
             tmp_str = (char*) calloc (
                 18 + strlen(BUILD_DIR_VAR) + strlen(tasks[l_index].name),
@@ -1830,6 +2241,30 @@ static void sauWriteClean (
         break;
 
     case PLATFORM_WINDOWS:
+        tmp_str = (char*) calloc (
+            2 * (strlen(BUILD_DIR_VAR) + strlen(pr_name)) + 60,
+            sizeof(char)
+        );
+
+        sprintf (
+            tmp_str,
+            "\tdel /s /q $(%s)\\%s\\*\n" \
+            "\tfor /d %%x in ($(%s)\\%s\\*) do @rd /s /q \"%%x\"\n",
+            BUILD_DIR_VAR,
+            pr_name,
+            BUILD_DIR_VAR,
+            pr_name
+        );
+
+        fwrite (
+            tmp_str,
+            sizeof(char),
+            strlen(tmp_str),
+            file
+        );
+
+        free(tmp_str);
+
         for(l_index = 0; l_index < task_c; l_index++) {
             tmp_str = (char*) calloc (
                 19 + strlen(BUILD_DIR_VAR) + strlen(tasks[l_index].name),
@@ -2005,6 +2440,21 @@ void sauWriteMakefile(BuildInfo *p_bi) {
     // Write init task into makefile
     fwrite("\n", sizeof(char), 1, file);
     sauWriteInitTask(p_bi->platform, file);
+
+    // Write copy and link tasks if they exist
+    sauWriteCopyTask (
+        &p_bi->cpy_info, 
+        p_bi->platform, 
+        p_bi->premake.project_name, 
+        file
+    );
+    
+    sauWriteLinkTask (
+        &p_bi->link_info, 
+        p_bi->platform, 
+        p_bi->premake.project_name,
+        file
+    );
     
     // Write default all task
     fwrite("\n", sizeof(char), 1, file);
@@ -2017,6 +2467,7 @@ void sauWriteMakefile(BuildInfo *p_bi) {
     }
 
     // Write phony tasks
+    fwrite("\n", sizeof(char), 1, file);
     sauWriteClean (
         p_bi->tasks, 
         p_bi->task_c, 

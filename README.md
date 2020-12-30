@@ -7,13 +7,13 @@ different platforms using simple yaml configuration.
 ## Usage
 In order to create makefile for current platform  
 `$ saucer build.yml`    
-For specific platform `-p` flag can be used. Following examples show how to create makefile for different platform than the one being detected right now.   
+For specific platform `-p` flag can be used. Following examples show how to create makefile for different platform other than the one being detected right now.   
 Using Macos configuration: `$ saucer build.yml -p apple`   
 Using Windows configuration: `$ saucer build.yml -p windows`  
 Using Linux configuration: `$ saucer build.yml -p linux`  
 
 ## YAML configuration
-Yaml configuration file can be created easily. Two most important keys in yaml configuration file are `premake` and `tasks` keys. Keys that support platform specific values can be specified with following subkeys:  
+Yaml configuration file can be created easily. Two most important keys in yaml configuration file are `premake` and `tasks` keys. Additionally `link` and `cpy` flags can be used to add copy or symlink to build directory. Keys that support platform specific values can be specified with following subkeys:  
 `apple` for macos specific configuration value  
 `linux` for linux specific configuration value    
 `windows` for windows specific configuration value  
@@ -38,7 +38,11 @@ Tasks subkey can contain following subkeys:
 Task types can be following:  
 * `exec`          - executable target
 * `dynamic_lib`   - dynamic library target (.so for unix like systems / .dll for windows)
-* `static_lib`    - static library target
+* `static_lib`    - static library target    
+
+Cpy and link keys:
+* `cpy`           - copy from subkey value to destination in [BUILD_DIR]/[SUBKEY_NAME]  
+* `link`          - create symlink between subkey value and [BUILD_DIR]/[SUBKEY_NAME]  
 
 ## Building
 To install Saucer use following make command:  

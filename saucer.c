@@ -154,6 +154,89 @@ static void buildLog(BuildInfo *p_bi) {
             break;
         }
     }
+
+    printf("LINKS:\n");
+    for(l_index = 0; l_index < p_bi->link_info.all.link_c; l_index++)
+        printf (
+            "--%s from %s\n", 
+            p_bi->link_info.all.links[l_index],
+            p_bi->link_info.all.srcs[l_index]
+        );
+
+    switch (p_bi->platform)
+    {
+    case PLATFORM_APPLE:
+        for(l_index = 0; l_index < p_bi->link_info.apple_i.link_c; l_index++)
+            printf (
+                "--%s from %s\n", 
+                p_bi->link_info.apple_i.links[l_index],
+                p_bi->link_info.apple_i.srcs[l_index]
+            );
+        break;
+
+    case PLATFORM_LINUX:
+        for(l_index = 0; l_index < p_bi->link_info.linux_i.link_c; l_index++)
+            printf (
+                "--%s from %s\n", 
+                p_bi->link_info.linux_i.links[l_index],
+                p_bi->link_info.linux_i.srcs[l_index]
+            );
+        break;
+    
+    case PLATFORM_WINDOWS:
+        for(l_index = 0; l_index < p_bi->link_info.win_i.link_c; l_index++)
+            printf (
+                "--%s from %s\n", 
+                p_bi->link_info.win_i.links[l_index],
+                p_bi->link_info.win_i.srcs[l_index]
+            );
+        break;
+    
+    default:
+        break;
+    }
+
+    
+    printf("COPIES:\n");
+    for(l_index = 0; l_index < p_bi->cpy_info.all.cpy_c; l_index++)
+        printf (
+            "--%s from %s\n", 
+            p_bi->cpy_info.all.dsts[l_index],
+            p_bi->cpy_info.all.srcs[l_index]
+        );
+
+    switch (p_bi->platform)
+    {
+    case PLATFORM_APPLE:
+        for(l_index = 0; l_index < p_bi->cpy_info.apple_i.cpy_c; l_index++)
+            printf (
+                "--%s from %s\n", 
+                p_bi->cpy_info.apple_i.dsts[l_index],
+                p_bi->cpy_info.apple_i.srcs[l_index]
+            );
+        break;
+
+    case PLATFORM_LINUX:
+        for(l_index = 0; l_index < p_bi->cpy_info.linux_i.cpy_c; l_index++)
+            printf (
+                "--%s from %s\n", 
+                p_bi->cpy_info.linux_i.dsts[l_index],
+                p_bi->cpy_info.linux_i.srcs[l_index]
+            );
+        break;
+    
+    case PLATFORM_WINDOWS:
+        for(l_index = 0; l_index < p_bi->cpy_info.win_i.cpy_c; l_index++)
+            printf (
+                "--%s from %s\n", 
+                p_bi->cpy_info.win_i.dsts[l_index],
+                p_bi->cpy_info.win_i.srcs[l_index]
+            );
+        break;
+    
+    default:
+        break;
+    }
 }
 
 
@@ -171,11 +254,19 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
 
+    else if(!strcmp(argv[1], "clean")) {
+        remove("Makefile");
+        remove("init.sh");
+        remove("init.bat");
+        printf("Done!\n");
+        exit(0);
+    }
+
     yamlParse(&keys, &key_c, argv[1]);
     BuildInfo bi;
     sauAssembleBuildData(keys, key_c, &bi);
     // buildLog(&bi);
-    
+
     // Check for platform specification
     if
     (
@@ -199,6 +290,8 @@ int main(int argc, char *argv[]) {
     ) bi.platform = PLATFORM_WINDOWS;
 
     sauWriteMakefile(&bi);
+
+    // buildLog(&bi);
 
     switch (bi.platform)
     {

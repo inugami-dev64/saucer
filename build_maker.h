@@ -6,9 +6,10 @@
 
 /* Platform specifier */
 typedef enum PlatformInfo {
-    PLATFORM_LINUX = 0,
-    PLATFORM_APPLE = 1,
-    PLATFORM_WINDOWS = 2
+    PLATFORM_ALL        = -1,
+    PLATFORM_LINUX      = 0,
+    PLATFORM_APPLE      = 1,
+    PLATFORM_WINDOWS    = 2
 } PlatformInfo;
 
 
@@ -159,18 +160,61 @@ typedef struct TaskInfo {
 } TaskInfo;
 
 
+/* Copy data */
+typedef struct CopyInfoBase {
+    char **dsts;
+    char **srcs;
+    int32_t cpy_c;
+} CopyInfoBase;
+
+typedef CopyInfoBase CopyInfoAll;
+typedef CopyInfoBase CopyInfoWin;
+typedef CopyInfoBase CopyInfoLinux;
+typedef CopyInfoBase CopyInfoApple;
+
+typedef struct CopyInfo {
+    CopyInfoAll all;
+    CopyInfoApple apple_i;
+    CopyInfoLinux linux_i;
+    CopyInfoWin win_i;
+} CopyInfo;
+
+
+/* Sym link data */
+typedef struct LinkInfoBase {
+    char **links;
+    char **srcs;
+    int32_t link_c;
+} LinkInfoBase;
+
+typedef LinkInfoBase LinkInfoAll;
+typedef LinkInfoBase LinkInfoWin;
+typedef LinkInfoBase LinkInfoLinux;
+typedef LinkInfoBase LinkInfoApple;
+
+typedef struct LinkInfo {
+    LinkInfoAll all;
+    LinkInfoApple apple_i;
+    LinkInfoLinux linux_i;
+    LinkInfoWin win_i;
+} LinkInfo;
+
+
 /* Build specification struct */
 typedef struct BuildInfo {
     PlatformInfo platform;
     PremakeInfo premake;
     TaskInfo *tasks;
     int32_t task_c;
+    CopyInfo cpy_info;
+    LinkInfo link_info;
 } BuildInfo;
 
 
 #ifdef BUILD_MAKER_PRIVATE
     static void sauFindSrcFileExt(char *file);
     static void sauFindPlatformValues(KeyData *keys, int32_t key_c, int32_t cur_index, char ***p_vals, int32_t *p_val_c, char *platform);
+    static void sauPushToStrArr(char ***p_dst_arr, int32_t *p_arr_len, char *val);
 
     // Premake config functions
     static void sauInitPremakeValues(BuildInfo *p_bi);
@@ -178,10 +222,13 @@ typedef struct BuildInfo {
     static void sauFindPremakeValues(KeyData *keys, int32_t pre_beg_index, int32_t pre_end_index, BuildInfo *p_bi);
     static void sauAssemblePremake(KeyData *keys, int32_t key_c, BuildInfo *p_bi);
 
-
     // Tasks config functions
     static void sauGetTaskData(KeyData *keys, int32_t key_c, int32_t key_index, BuildInfo *p_bi);
     static void sauAssembleTasks(KeyData *keys, int32_t key_c, BuildInfo *p_bi);
+
+    // Find links and copies
+    static void sauFindLinks(KeyData *keys, int32_t key_c, BuildInfo *p_bi);
+    static void sauFindCopies(KeyData *keys, int32_t key_c, BuildInfo *p_bi);
 #endif
 
 /* Create build info needed for makefile creation */

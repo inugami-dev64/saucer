@@ -1,8 +1,9 @@
 #define BUILD_MAKER_PRIVATE
 #include "saucer.h"
 
-static uint8_t is_cpp = false;
-static uint8_t is_c = false;
+static uint8_t is_cpp   = false;
+static uint8_t is_c     = false;
+static int32_t base_ws  = 0;
 
 /* Find the source file extension */
 static void sauFindSrcFileExt(char *file) {
@@ -77,6 +78,30 @@ static void sauFindPlatformValues (
             return;
         };
     } 
+}
+
+
+/* Push string to dynamic string array */
+static void sauPushToStrArr (
+    char ***p_dst_arr, 
+    int32_t *p_arr_len,
+    char *val
+) {
+    (*p_arr_len)++;
+    
+    char **tmp_arr = (char**) realloc (
+        (*p_dst_arr),
+        (*p_arr_len) * sizeof(char*)  
+    );
+
+    // Check for reallocation error
+    if(!tmp_arr) {
+        MEMERR("failed to reallocate memory");
+        exit(ERRC_MEM);
+    }
+
+    (*p_dst_arr) = tmp_arr;
+    (*p_dst_arr)[(*p_arr_len) - 1] = val; 
 }
 
 
@@ -170,6 +195,88 @@ static void sauInitPremakeValues(BuildInfo *p_bi) {
         1, 
         sizeof(TaskInfo)
     );
+
+    // Copies
+    p_bi->cpy_info.all.srcs = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->cpy_info.all.dsts = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->cpy_info.all.cpy_c = 0;
+    
+    p_bi->cpy_info.apple_i.srcs = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->cpy_info.apple_i.dsts = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->cpy_info.apple_i.cpy_c = 0;
+    
+    p_bi->cpy_info.linux_i.srcs = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->cpy_info.linux_i.dsts = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->cpy_info.linux_i.cpy_c = 0;
+    
+    p_bi->cpy_info.win_i.srcs = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->cpy_info.win_i.dsts = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->cpy_info.win_i.cpy_c = 0;
+
+    // Links
+    p_bi->link_info.all.srcs = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->link_info.all.links = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->link_info.all.link_c = 0;
+    
+    p_bi->link_info.apple_i.srcs = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->link_info.apple_i.links = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->link_info.apple_i.link_c = 0;
+    
+    p_bi->link_info.linux_i.srcs = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->link_info.linux_i.links = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->link_info.linux_i.link_c = 0;
+    
+    p_bi->link_info.win_i.srcs = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->link_info.win_i.links = (char**) calloc (
+        1,
+        sizeof(char*)
+    );
+    p_bi->link_info.win_i.link_c = 0;
 }
 
 
@@ -535,18 +642,24 @@ static void sauAssemblePremake (
 ) {
     int32_t l_index;
     sauInitPremakeValues(p_bi);
-    
+
+    uint8_t is_premake = false;
     int32_t pre_beg_index, pre_end_index;
     // Find premake key beginning index
     for(l_index = 0; l_index < key_c; l_index++) {
-        if(!strcmp(keys[l_index].key_name, "premake")) {
+        if
+        (
+            !strcmp(keys[l_index].key_name, "premake") &&
+            keys[l_index].ws_c == base_ws
+        ) {
             pre_beg_index = l_index;
+            is_premake = true;
             break;
         }
     }
 
     // Check for build config error
-    if(pre_beg_index == key_c - 1) {
+    if(!is_premake || pre_beg_index == key_c - 1) {
         BERR (
             "no premake configs specified", 
             ""
@@ -556,7 +669,7 @@ static void sauAssemblePremake (
     
     // Find premake key ending index
     for(l_index = pre_beg_index + 1; l_index < key_c; l_index++) {
-        if(keys[l_index].line <= keys[pre_beg_index].line) {
+        if(keys[l_index].ws_c <= keys[pre_beg_index].ws_c) {
             pre_end_index = l_index;
             break;
         }
@@ -574,6 +687,7 @@ static void sauAssemblePremake (
 }
 
 
+/* Assemble all information needed for tasks */
 static void sauAssembleTasks 
 (
     KeyData *keys, 
@@ -583,18 +697,23 @@ static void sauAssembleTasks
     int32_t l_index;
 
     // Find the tasks key
-    int32_t task_beg, min_ws, max_ws;
+    uint8_t found_tasks;
+    int32_t task_beg, max_ws;
     for(l_index = 0; l_index < key_c; l_index++) {
-        if(!strcmp(keys[l_index].key_name, "tasks")) {
+        if
+        (
+            !strcmp(keys[l_index].key_name, "tasks") &&
+            base_ws == keys[l_index].ws_c
+        ) {
             task_beg = l_index;
-            min_ws = keys[l_index].ws_c;
+            found_tasks = true;
             break;
         }
     }
 
     // Check for build error
-    if(task_beg == key_c - 1) {
-        BERR(
+    if(!found_tasks || task_beg == key_c - 1) {
+        BERR (
             "no tasks specified",
             ""
         );
@@ -607,9 +726,358 @@ static void sauAssembleTasks
         // Found task
         if
         (
-            keys[l_index].ws_c > min_ws &&
+            keys[l_index].ws_c > base_ws &&
             keys[l_index].ws_c <= max_ws
         ) sauGetTaskData(keys, key_c, l_index, p_bi);
+        else if(keys[l_index].ws_c <= base_ws) break;
+    }
+}
+
+
+static void sauFindLinks (
+    KeyData *keys,
+    int32_t key_c,
+    BuildInfo *p_bi
+) {
+    int32_t l_index;
+    
+    // Find the link key
+    uint8_t found_link = false;
+    int32_t max_ws, beg_index;
+    for(l_index = 0; l_index < key_c; l_index++) {
+        if
+        (
+            !strcmp(keys[l_index].key_name, "link") &&
+            base_ws == keys[l_index].ws_c
+        ) {
+            beg_index = l_index;
+            found_link = true;
+            break;
+        }
+    }
+
+    if(!found_link) return;
+
+    // Check for build error
+    if(beg_index == key_c - 1) {
+        BERR (
+            "link key with no values specified",
+            ""
+        );
+
+        exit(ERRC_BUILD_CFG);
+    }
+
+    max_ws = keys[beg_index + 1].ws_c;
+
+    PlatformInfo pi = PLATFORM_ALL;
+    int32_t pl_min_ws;
+    uint8_t is_platform_val = false;
+
+    for(l_index = beg_index + 1; l_index < key_c; l_index++) {
+        if
+        (   
+            !is_platform_val &&
+            keys[l_index].ws_c > base_ws &&
+            keys[l_index].ws_c <= max_ws
+        ) {
+            if(!strcmp(keys[l_index].key_name, "apple")) {
+                is_platform_val = true;
+                pi = PLATFORM_APPLE;
+                pl_min_ws = keys[l_index].ws_c;
+            }
+
+            else if(!strcmp(keys[l_index].key_name, "linux")) {
+                is_platform_val = true;
+                pi = PLATFORM_LINUX;
+                pl_min_ws = keys[l_index].ws_c;
+            }
+
+            else if(!strcmp(keys[l_index].key_name, "windows")) {
+                is_platform_val = true;
+                pi = PLATFORM_WINDOWS;
+                pl_min_ws = keys[l_index].ws_c;
+            }
+
+            else {
+                // Check for value error
+                if(!keys[l_index].key_val_c) {
+                    BERR (
+                        "link key with no value",
+                        keys[l_index].key_name
+                    );
+
+                    exit(ERRC_BUILD_CFG);
+                }
+
+                sauPushToStrArr (
+                    &p_bi->link_info.all.links,
+                    &p_bi->link_info.all.link_c,
+                    keys[l_index].key_name
+                );
+
+                p_bi->link_info.all.link_c--;
+                sauPushToStrArr (
+                    &p_bi->link_info.all.srcs,
+                    &p_bi->link_info.all.link_c,
+                    *keys[l_index].key_vals
+                );
+            }
+        }
+
+        else if
+        (
+            is_platform_val &&
+            keys[l_index].ws_c > pl_min_ws
+        ) {
+            // Check for value error
+            if(!keys[l_index].key_val_c) {
+                BERR (
+                    "link key with no value",
+                    keys[l_index].key_name
+                );
+
+                exit(ERRC_BUILD_CFG);
+            }
+
+            switch (pi)
+            {
+            case PLATFORM_APPLE:
+                sauPushToStrArr (
+                    &p_bi->link_info.apple_i.links,
+                    &p_bi->link_info.apple_i.link_c,
+                    keys[l_index].key_name
+                );
+
+                p_bi->link_info.apple_i.link_c--;
+                sauPushToStrArr (
+                    &p_bi->link_info.apple_i.srcs,
+                    &p_bi->link_info.apple_i.link_c,
+                    *keys[l_index].key_vals
+                );
+                break;
+
+            case PLATFORM_LINUX:
+                sauPushToStrArr (
+                    &p_bi->link_info.linux_i.links,
+                    &p_bi->link_info.linux_i.link_c,
+                    keys[l_index].key_name
+                );
+
+                p_bi->link_info.linux_i.link_c--;
+                
+                sauPushToStrArr (
+                    &p_bi->link_info.linux_i.srcs,
+                    &p_bi->link_info.linux_i.link_c,
+                    *keys[l_index].key_vals
+                );
+                break;
+
+            case PLATFORM_WINDOWS:
+                sauPushToStrArr (
+                    &p_bi->link_info.win_i.links,
+                    &p_bi->link_info.win_i.link_c,
+                    keys[l_index].key_name
+                );
+
+                p_bi->link_info.win_i.link_c--;
+                sauPushToStrArr (
+                    &p_bi->link_info.win_i.srcs,
+                    &p_bi->link_info.win_i.link_c,
+                    *keys[l_index].key_vals
+                );
+                break;
+            
+            default:
+                break;
+            }
+        }
+
+        else if 
+        (
+            is_platform_val &&
+            keys[l_index].ws_c <= pl_min_ws &&
+            keys[l_index].ws_c > base_ws
+        )  {
+            is_platform_val = false;
+            l_index--;
+        }
+
+        else if(keys[l_index].ws_c <= base_ws) return;
+    }
+}
+
+
+static void sauFindCopies (
+    KeyData *keys, 
+    int32_t key_c,
+    BuildInfo *p_bi
+) {
+    int32_t l_index;
+    
+    // Find the link key
+    uint8_t found_link = false;
+    int32_t max_ws, beg_index;
+    for(l_index = 0; l_index < key_c; l_index++) {
+        if
+        (
+            !strcmp(keys[l_index].key_name, "cpy") &&
+            base_ws == keys[l_index].ws_c
+        ) {
+            beg_index = l_index;
+            found_link = true;
+            break;
+        }
+    }
+
+    if(!found_link) return;
+
+    // Check for build error
+    if(beg_index == key_c - 1) {
+        BERR (
+            "link key with no values specified",
+            ""
+        );
+
+        exit(ERRC_BUILD_CFG);
+    }
+
+    max_ws = keys[beg_index + 1].ws_c;
+
+    PlatformInfo pi = PLATFORM_ALL;
+    int32_t pl_min_ws;
+    uint8_t is_platform_val = false;
+
+    for(l_index = beg_index + 1; l_index < key_c; l_index++) {
+        if
+        (   
+            !is_platform_val &&
+            keys[l_index].ws_c > base_ws &&
+            keys[l_index].ws_c <= max_ws
+        ) {
+            if(!strcmp(keys[l_index].key_name, "apple")) {
+                is_platform_val = true;
+                pi = PLATFORM_APPLE;
+                pl_min_ws = keys[l_index].ws_c;
+            }
+
+            else if(!strcmp(keys[l_index].key_name, "linux")) {
+                is_platform_val = true;
+                pi = PLATFORM_LINUX;
+                pl_min_ws = keys[l_index].ws_c;
+            }
+
+            else if(!strcmp(keys[l_index].key_name, "windows")) {
+                is_platform_val = true;
+                pi = PLATFORM_WINDOWS;
+                pl_min_ws = keys[l_index].ws_c;
+            }
+
+            else {
+                // Check for value error
+                if(!keys[l_index].key_val_c) {
+                    BERR (
+                        "link key with no value",
+                        keys[l_index].key_name
+                    );
+
+                    exit(ERRC_BUILD_CFG);
+                }
+
+                sauPushToStrArr (
+                    &p_bi->cpy_info.all.dsts,
+                    &p_bi->cpy_info.all.cpy_c,
+                    keys[l_index].key_name
+                );
+
+                p_bi->cpy_info.all.cpy_c--;
+                sauPushToStrArr (
+                    &p_bi->cpy_info.all.srcs,
+                    &p_bi->cpy_info.all.cpy_c,
+                    *keys[l_index].key_vals
+                );
+            }
+        }
+
+        else if
+        (
+            is_platform_val &&
+            keys[l_index].ws_c > pl_min_ws
+        ) {
+            // Check for value error
+            if(!keys[l_index].key_val_c) {
+                BERR (
+                    "copy key with no value",
+                    keys[l_index].key_name
+                );
+
+                exit(ERRC_BUILD_CFG);
+            }
+
+            switch (pi)
+            {
+            case PLATFORM_APPLE:
+                sauPushToStrArr (
+                    &p_bi->cpy_info.apple_i.dsts,
+                    &p_bi->cpy_info.apple_i.cpy_c,
+                    keys[l_index].key_name
+                );
+
+                p_bi->cpy_info.apple_i.cpy_c--;
+                sauPushToStrArr (
+                    &p_bi->cpy_info.apple_i.srcs,
+                    &p_bi->cpy_info.apple_i.cpy_c,
+                    *keys[l_index].key_vals
+                );
+                break;
+
+            case PLATFORM_LINUX:
+                sauPushToStrArr (
+                    &p_bi->cpy_info.linux_i.dsts,
+                    &p_bi->cpy_info.linux_i.cpy_c,
+                    keys[l_index].key_name
+                );
+
+                p_bi->cpy_info.linux_i.cpy_c--;
+                
+                sauPushToStrArr (
+                    &p_bi->cpy_info.linux_i.srcs,
+                    &p_bi->cpy_info.linux_i.cpy_c,
+                    *keys[l_index].key_vals
+                );
+                break;
+
+            case PLATFORM_WINDOWS:
+                sauPushToStrArr (
+                    &p_bi->cpy_info.win_i.dsts,
+                    &p_bi->cpy_info.win_i.cpy_c,
+                    keys[l_index].key_name
+                );
+
+                p_bi->cpy_info.win_i.cpy_c--;
+                sauPushToStrArr (
+                    &p_bi->cpy_info.win_i.srcs,
+                    &p_bi->cpy_info.win_i.cpy_c,
+                    *keys[l_index].key_vals
+                );
+                break;
+            
+            default:
+                break;
+            }
+        }
+
+        else if 
+        (
+            is_platform_val &&
+            keys[l_index].ws_c <= pl_min_ws &&
+            keys[l_index].ws_c > base_ws
+        )  {
+            is_platform_val = false;
+            l_index--;
+        }
+
+        else if(keys[l_index].ws_c <= base_ws) return;
     }
 }
 
@@ -620,6 +1088,21 @@ void sauAssembleBuildData (
     int32_t key_c, 
     BuildInfo *p_bi
 ) {
+    int32_t l_index;
+    // Find the base whitespace count
+    for(l_index = 0; l_index < key_c; l_index++) {
+        if(!l_index) base_ws = keys[l_index].ws_c;
+
+        if(!keys[l_index].ws_c) {
+            base_ws = keys[l_index].ws_c;
+            break;
+        }
+        else if(keys[l_index].ws_c < base_ws) 
+            base_ws = keys[l_index].ws_c;
+    }
+
     sauAssemblePremake(keys, key_c, p_bi);
     sauAssembleTasks(keys, key_c, p_bi);
+    sauFindLinks(keys, key_c, p_bi);
+    sauFindCopies(keys, key_c, p_bi);
 }
