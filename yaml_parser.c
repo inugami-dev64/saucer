@@ -319,7 +319,7 @@ static uint8_t yamlGetGenLineValues(char *line, KeyData *p_key, int32_t min_ws, 
         case '>':
             // Populate tmp_str while skipping all newlines
             for(l_index = l_ws_c, ch_index = 0; l_index < strlen(line); l_index++) {
-                if(line[l_index] != 0x0A) {
+                if(line[l_index] != 0x0A && line[l_index] != 0x0D) {
                     // Check if more memory is needed for the
                     if(ch_index >= YAML_CH_BUFFER_SIZE) {
                         char *p_tmp = (char*) realloc (
@@ -826,12 +826,12 @@ static void yamlLines(char ***p_lines, int32_t *p_size, char *file_contents) {
     r_index = 0; 
     ch_index = 0;
     for(l_index = 0; l_index < strlen(file_contents); l_index++) {
-        if(file_contents[l_index] != 0x0A) {
+        if(file_contents[l_index] != 0x0A && file_contents[l_index] != 0x0D) {
             (*p_lines)[r_index][ch_index] = file_contents[l_index];
             ch_index++;
         }
 
-        else {
+        else if(file_contents[l_index] == 0x0A){
             ch_index = 0; 
             r_index++;
         }
@@ -858,7 +858,7 @@ void yamlParse(KeyData **p_key_data, int32_t *p_key_c, char *file_name) {
     file_size = ftell(file);
     res = fseek(file, 0, SEEK_SET);
     if(res) printf("Failed to find file size for file %s\n", file_name);
-
+    
     // Read all file data into contents variable
     char *file_contents = (char*) calloc(file_size + 1, 1);
     res = fread(file_contents, 1, file_size, file);

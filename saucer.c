@@ -120,6 +120,7 @@ static void buildLog(BuildInfo *p_bi) {
             break;
 
         case PLATFORM_WINDOWS:
+            printf("Windows size: %d\n", p_bi->tasks[l_index].src_info.win_i.file_c);
             for(r_index = 0; r_index < p_bi->tasks[l_index].src_info.win_i.file_c; r_index++)
                 printf("--%s\n", p_bi->tasks[l_index].src_info.win_i.files[r_index]);
             break;

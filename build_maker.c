@@ -11,7 +11,7 @@ static void sauFindSrcFileExt(char *file) {
     int32_t beg_index;
     int32_t ext_ch_c = 3;
     char *ext = (char*) calloc ( 
-        ext_ch_c,
+        ext_ch_c + 1,
         sizeof(char)
     );
 
@@ -42,6 +42,7 @@ static void sauFindSrcFileExt(char *file) {
         !strcmp(ext, "cpp")
     ) is_cpp = true;
     else {
+        printf("EXT: %s\n", ext);
         BERR (
             "unknown source file ",
             file
@@ -495,6 +496,24 @@ static void sauGetTaskData (
 
     p_bi->tasks = p_ti;
     p_bi->tasks[p_bi->task_c - 1].name = keys[key_index].key_name;
+    
+    p_bi->tasks[p_bi->task_c - 1].src_info.all.files = NULL;
+    p_bi->tasks[p_bi->task_c - 1].src_info.all.file_c = 0;
+    p_bi->tasks[p_bi->task_c - 1].src_info.apple_i.files = NULL;
+    p_bi->tasks[p_bi->task_c - 1].src_info.apple_i.file_c = 0;
+    p_bi->tasks[p_bi->task_c - 1].src_info.linux_i.files = NULL;
+    p_bi->tasks[p_bi->task_c - 1].src_info.linux_i.file_c = 0;
+    p_bi->tasks[p_bi->task_c - 1].src_info.win_i.files = NULL;
+    p_bi->tasks[p_bi->task_c - 1].src_info.win_i.file_c = 0;
+    
+    p_bi->tasks[p_bi->task_c - 1].deps_info.all.deps = NULL;
+    p_bi->tasks[p_bi->task_c - 1].deps_info.all.deps_c = 0;
+    p_bi->tasks[p_bi->task_c - 1].deps_info.apple_i.deps = NULL;
+    p_bi->tasks[p_bi->task_c - 1].deps_info.apple_i.deps_c = 0;
+    p_bi->tasks[p_bi->task_c - 1].deps_info.linux_i.deps = NULL;
+    p_bi->tasks[p_bi->task_c - 1].deps_info.linux_i.deps_c = 0;
+    p_bi->tasks[p_bi->task_c - 1].deps_info.win_i.deps = NULL;
+    p_bi->tasks[p_bi->task_c - 1].deps_info.win_i.deps_c = 0;
 
     // Check for build config error
     if(key_index + 1 >= key_c) {

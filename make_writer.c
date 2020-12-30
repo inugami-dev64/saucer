@@ -349,7 +349,6 @@ static uint8_t sauWritePlatformFlagVar (
 ) {
     char **tmp_str_arr;
     int32_t tmp_len;
-
     cmbStrArr (
         all_str,
         all_str_c,
@@ -873,18 +872,35 @@ static void sauWriteTaskTargetVar (
     switch (p_task->type)
     {
     case TARGET_TYPE_DYNAMIC_LIBRARY:
-        tmp_str = (char*) calloc (
-            strlen(target_var) + strlen(p_task->name) + strlen(project_name) + 26,
-            sizeof(char)
-        );
+        if(pi == PLATFORM_WINDOWS) {
+            tmp_str = (char*) calloc (
+                strlen(target_var) + strlen(p_task->name) + strlen(project_name) + 27,
+                sizeof(char)
+            );
 
-        sprintf (
-            tmp_str,
-            "%s = $(BUILD_DIR)/%s/lib/%s.so\n",
-            target_var,
-            project_name,
-            p_task->name
-        );
+            sprintf (
+                tmp_str,
+                "%s = $(BUILD_DIR)/%s/lib/%s.dll\n",
+                target_var,
+                project_name,
+                p_task->name
+            );
+        }
+
+        else {
+            tmp_str = (char*) calloc (
+                strlen(target_var) + strlen(p_task->name) + strlen(project_name) + 26,
+                sizeof(char)
+            );
+
+            sprintf (
+                tmp_str,
+                "%s = $(BUILD_DIR)/%s/lib/%s.so\n",
+                target_var,
+                project_name,
+                p_task->name
+            );
+        }
 
         break;
     
@@ -1948,16 +1964,18 @@ static void sauWriteLinkTask (
         for(l_index = 0; l_index < src_c; l_index++) {
             tmp_str = (char*) calloc (
                 strlen(link_src[l_index]) + strlen(link_tar[l_index]) + 
-                strlen(pr_name) + strlen(BUILD_DIR_VAR) + 19,
+                strlen(pr_name) + strlen(BUILD_DIR_VAR) + 28,
                 sizeof(char)
             );
 
+            sauFixWindowsPaths(&link_src[l_index], 1);
+
             sprintf (
                 tmp_str,
-                "\tmklink /J %s $(%s)\\%s\\%s\n",
-                link_tar[l_index],
+                "\tcmd /c \"mklink /J $(%s)\\%s\\%s %s\"\n",
                 BUILD_DIR_VAR,
                 pr_name,
+                link_tar[l_index],
                 link_src[l_index]
             );
 
