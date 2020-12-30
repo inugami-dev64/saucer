@@ -45,5 +45,5 @@ Cpy and link keys:
 * `link`          - create symlink between subkey value and [BUILD_DIR]/[SUBKEY_NAME]  
 
 ## Building
-To install Saucer use following make command:  
+To build and install Saucer use following make command:  
 `$ sudo make clean install`
