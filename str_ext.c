@@ -206,6 +206,65 @@ void strToHigherCase(char **p_str) {
 }
 
 
+/* Merge two string paths into one path */
+char *strnPathMerge (
+    char *dir1,
+    int32_t dir1_n, 
+    char *dir2,
+    int32_t dir2_n
+) {
+    char *out_path;
+
+    // Find string allocation size
+    int32_t alloc_size = dir1_n + dir2_n + 1;
+    if(dir1[dir1_n - 1] != 0x2F) alloc_size++;
+
+    out_path = (char*) calloc (
+        alloc_size,
+        sizeof(char)
+    );
+
+    int32_t offset = 0;
+    if(dir1[dir1_n - 1] == 0x2F) {
+        strncpy (
+            out_path + offset,
+            dir1,
+            dir1_n
+        );
+
+        offset += dir1_n;
+        
+        strncpy (
+            out_path + offset,
+            dir2,
+            dir2_n
+        );
+
+        offset += dir2_n;
+    }
+
+    else {
+        strncpy (
+            out_path + offset,
+            dir1,
+            dir1_n
+        );
+
+        offset += dir1_n;
+        out_path[offset] = 0x2F;
+        offset++;
+
+        strncpy (
+            out_path + offset,
+            dir2,
+            dir2_n
+        );
+    }
+
+    return out_path;    
+}
+
+
 /* Make all values of chars 0x00 */
 void cleanStr(char *str, int32_t size) {
     int32_t index;

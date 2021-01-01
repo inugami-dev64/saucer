@@ -13,6 +13,25 @@ typedef enum PlatformInfo {
 } PlatformInfo;
 
 
+/********** Import info ************/
+typedef struct ImportInfoBase {
+    char **imports;
+    int32_t import_c;
+} ImportInfoBase;
+
+typedef ImportInfoBase ImportInfoAll;
+typedef ImportInfoBase ImportInfoWin;
+typedef ImportInfoBase ImportInfoLinux;
+typedef ImportInfoBase ImportInfoApple;
+
+typedef struct ImportInfo {
+    ImportInfoAll all;
+    ImportInfoApple apple_i;
+    ImportInfoLinux linux_i;
+    ImportInfoWin win_i;
+} ImportInfo;
+
+
 /********** Premake structs **************/
 /* Compiler to use */
 typedef struct CompilerInfo {
@@ -200,9 +219,21 @@ typedef struct LinkInfo {
 } LinkInfo;
 
 
+/* Compiler flag specifiers booleans */
+typedef struct CompilerFlagInfos {
+    uint8_t is_cc_flags;
+    uint8_t is_cxx_flags;
+    uint8_t is_incl_path;
+    uint8_t is_lib_path;
+} CompilerFlagInfos;
+
+
 /* Build specification struct */
 typedef struct BuildInfo {
+    CompilerFlagInfos flag_infos;
+    char *all_task;
     PlatformInfo platform;
+    ImportInfo import;
     PremakeInfo premake;
     TaskInfo *tasks;
     int32_t task_c;
@@ -217,6 +248,7 @@ typedef struct BuildInfo {
     static void sauPushToStrArr(char ***p_dst_arr, int32_t *p_arr_len, char *val);
 
     // Premake config functions
+    static void sauFindImports(KeyData *keys, int32_t key_c, BuildInfo *p_bi);
     static void sauInitPremakeValues(BuildInfo *p_bi);
     static void sauVerifyPremake(BuildInfo *p_bi);
     static void sauFindPremakeValues(KeyData *keys, int32_t pre_beg_index, int32_t pre_end_index, BuildInfo *p_bi);
@@ -232,6 +264,6 @@ typedef struct BuildInfo {
 #endif
 
 /* Create build info needed for makefile creation */
-void sauAssembleBuildData(KeyData *keys, int32_t key_c, BuildInfo *p_bi);
+void sauAssembleBuildData(KeyData *keys, int32_t key_c, BuildInfo *p_bi, uint8_t is_imported);
 
 #endif

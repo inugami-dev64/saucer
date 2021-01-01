@@ -4,6 +4,8 @@
 #define CAPS_ADDABLE 0x20
 #define MIN_LOWER_CASE 0x61
 #define MAX_LOWER_CASE 0x7B
+#define MIN_UPPER_CASE 0x41
+#define MAX_UPPER_CASE 0x5A
 
 typedef enum TrimMode {
     TRIM_FRONT = 0,
@@ -16,6 +18,7 @@ void cmbStrArr(char **arr1, int32_t len1, char **arr2, int32_t len2, char ***p_o
 void cropStr(char **p_str, TrimMode trim_mode, int c);
 void removeComments(char **line_contents, size_t n_lines);
 void strToHigherCase(char **p_str);
+char *strnPathMerge(char *dir1, int32_t dir1_n, char *dir2, int32_t dir2_n);
 void cleanStr(char *str, int32_t size);
 
 #endif

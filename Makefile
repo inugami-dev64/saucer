@@ -4,7 +4,8 @@ OBJ = saucer.c.o \
 	  str_ext.c.o \
 	  build_maker.c.o \
 	  make_writer.c.o \
-	  script_man.c.o
+	  script_man.c.o \
+	  import_res.c
 
 TARGET = saucer
 FLAGS = -g -Wall
@@ -29,6 +30,9 @@ make_writer.c.o: make_writer.c
 
 script_man.c.o: script_man.c
 	$(CC) -c script_man.c -o script_man.c.o $(FLAGS)
+
+import_res.c.o: import_res.c
+	$(CC) -c import_res.c -o import_res.c.o $(FLAGS)
 
 .PHONY: clean
 clean:

@@ -1,20 +1,20 @@
 #define MAKE_WRITER_PRIVATE
 #include "saucer.h"
 
-static uint8_t is_cc_flags = false;
-static uint8_t is_cxx_flags = false;
-static uint8_t is_incl_path = false;
-static uint8_t is_lib_path = false;
 static uint8_t is_library_targets = false;
-
 static uint8_t is_cpy = false;
 static uint8_t is_link = false;
 
 static char **lib_targets;
 static int32_t lib_tar_c;
 
+static FILE *file;
+
 /* Write simple single line variable */
-static void sauWriteSingleLineVar(char *var, char *var_val, FILE *file) {
+static void sauWriteSingleLineVar (
+    char *var, 
+    char *var_val
+) {
     char *tmp_str = (char*) calloc (
         strlen(var) + strlen(var_val) + 5,
         sizeof(char)
@@ -35,6 +35,8 @@ static void sauWriteSingleLineVar(char *var, char *var_val, FILE *file) {
         strlen(tmp_str),
         file
     );
+
+    free(tmp_str);
 }
 
 
@@ -42,8 +44,7 @@ static void sauWriteSingleLineVar(char *var, char *var_val, FILE *file) {
 static void sauWriteFlagsVar (
     char *var, 
     char **flags, 
-    int32_t flag_c, 
-    FILE *file
+    int32_t flag_c 
 ) {
     int32_t l_index, b_offset;
     char *tmp_str;
@@ -95,8 +96,7 @@ static void sauWriteMultiLineVar (
     char *var,
     char *flag, 
     char **var_vals, 
-    int32_t val_c, 
-    FILE *file
+    int32_t val_c 
 ) {
     int32_t l_index, r_index;
     int32_t ws_c = strlen(var) + 2;
@@ -205,7 +205,7 @@ static void sauWriteMultiLineVar (
 
 
 /* Convert normal path into windows style path ('/' ==> '\') */
-static void sauFixWindowsPaths(char **paths, int32_t path_c) {
+void sauFixWindowsPaths(char **paths, int32_t path_c) {
     int32_t l_index, r_index;
 
     for(l_index = 0; l_index < path_c; l_index++) {
@@ -344,8 +344,7 @@ static uint8_t sauWritePlatformFlagVar (
     int32_t all_str_c, 
     char **pl_str, 
     int32_t pl_str_c, 
-    char *var_name,
-    FILE *file
+    char *var_name
 ) {
     char **tmp_str_arr = NULL;
     int32_t tmp_len = 0;
@@ -363,8 +362,7 @@ static uint8_t sauWritePlatformFlagVar (
         sauWriteFlagsVar (
             var_name,
             tmp_str_arr,
-            tmp_len,
-            file
+            tmp_len
         );
         
         free(tmp_str_arr);
@@ -382,8 +380,7 @@ static uint8_t sauWritePlatformMultilineVar
     char **pl_str,
     int32_t pl_str_c,
     char *var_name,
-    char *fl,
-    FILE *file
+    char *fl
 ) {
     char **tmp_str_arr;
     int32_t tmp_len = 0;
@@ -402,8 +399,7 @@ static uint8_t sauWritePlatformMultilineVar
             var_name,
             fl,
             tmp_str_arr,
-            tmp_len,
-            file
+            tmp_len
         );
 
         free(tmp_str_arr);
@@ -441,13 +437,15 @@ static void sauGetPlatformSpecificObjNames (
         }
 
         (*p_objs)[l_index] = (char*) calloc (
-            strlen(srcs[l_index] + str_offset) + strlen(target_name) + 24,
+            strlen(srcs[l_index] + str_offset) + strlen(target_name) + 
+            strlen(BUILD_DIR_VAR) + 12,
             sizeof(char)
         );
 
         sprintf (
             (*p_objs)[l_index],
-            "$(BUILD_DIR)/obj/%s/%s.o",
+            "$(%s)/obj/%s/%s.o",
+            BUILD_DIR_VAR,
             target_name,
             srcs[l_index] + str_offset
         );
@@ -603,8 +601,9 @@ static uint8_t sauWriteLibraryPathVar
     int32_t all_str_c,
     char **pl_str,
     int32_t pl_str_c,
-    BuildInfo *p_bi,
-    FILE *file
+    char *lib_var,
+    uint8_t is_imported,
+    BuildInfo *p_bi
 ) {
     char **tmp_str_arr = NULL;
     int32_t tmp_len = 0;
@@ -619,7 +618,7 @@ static uint8_t sauWriteLibraryPathVar
     );
 
     // Reallocate memory for base library path if needed
-    if(is_library_targets)
+    if(is_library_targets && !is_imported)
         sauPushDefaultLibraryPath(p_bi, &tmp_str_arr, &tmp_len);
     
     if(tmp_len) {
@@ -627,11 +626,10 @@ static uint8_t sauWriteLibraryPathVar
             sauFixWindowsPaths(tmp_str_arr, tmp_len);
 
         sauWriteMultiLineVar (
-            LIBRARY_PATH_VAR,
+            lib_var,
             LIBRARY_FLAG,
             tmp_str_arr,
-            tmp_len,
-            file
+            tmp_len
         );
 
         free(tmp_str_arr);
@@ -641,42 +639,100 @@ static uint8_t sauWriteLibraryPathVar
 }
 
 
+/* Create variable from project name */
+static char *sauMakeVarName(char *var_base, char *pr_name, uint8_t is_imported) {
+    char *out_str;
+    // Check if variable is part of imported config
+    if(is_imported) {
+        out_str = (char*) calloc (
+            strlen(var_base) + strlen(pr_name) + 2,
+            sizeof(char)
+        );
+
+        sprintf (
+            out_str,
+            "%s_%s",
+            pr_name,
+            var_base
+        );
+
+        strToHigherCase(&out_str);
+    }
+
+    else {
+        out_str = (char*) calloc (
+            strlen(var_base) + 1,
+            sizeof(char)
+        );
+
+        sprintf (
+            out_str,
+            "%s",
+            var_base
+        );
+    }
+
+    return out_str;
+}
+
+
 /* Write all premake variables */
-static void sauWritePremake(BuildInfo *p_bi, FILE *file) {
-    // Write C compiler variable
-    if(p_bi->premake.cc_info.cc)
-        sauWriteSingleLineVar (
-            C_COMPILER_VAR, 
-            p_bi->premake.cc_info.cc, 
-            file
-        );
-    // Write C++ compiler variable
-    if(p_bi->premake.cc_info.cxx)
-        sauWriteSingleLineVar (
-            CPP_COMPILER_VAR, 
-            p_bi->premake.cc_info.cxx, 
-            file
-        );
-    
+static void sauWritePremake(BuildInfo *p_bi, uint8_t is_imported) {
     // Check if src and build paths need to be made compatible with windows
     if(p_bi->platform == PLATFORM_WINDOWS) {
         sauFixWindowsPaths(&p_bi->premake.src_dir, 1);
         sauFixWindowsPaths(&p_bi->premake.build_dir, 1);
     }
 
-    // Write src directory var
-    sauWriteSingleLineVar (
-        SRC_DIR_VAR,
-        p_bi->premake.src_dir,
-        file
+    // Find source variable name
+    char *src_var = sauMakeVarName (
+        SRC_DIR_VAR, 
+        p_bi->premake.project_name, 
+        is_imported
     );
 
-    // Write build directory var
-    sauWriteSingleLineVar (
-        BUILD_DIR_VAR,
-        p_bi->premake.build_dir,
-        file
+    // Find C flags variable name
+    char *c_flags_var = sauMakeVarName (
+        C_FLAGS_VAR,
+        p_bi->premake.project_name,
+        is_imported
     );
+
+    // Find C++ flags variable name
+    char *cxx_flags_var = sauMakeVarName (
+        CPP_FLAGS_VAR,
+        p_bi->premake.project_name,
+        is_imported
+    );
+
+    // Find include path variable name
+    char *incl_path_var = sauMakeVarName (
+        INCLUDE_PATH_VAR,
+        p_bi->premake.project_name,
+        is_imported
+    );
+
+    // Find library path variable name
+    char *lib_path_var = sauMakeVarName (
+        LIBRARY_PATH_VAR,
+        p_bi->premake.project_name,
+        is_imported
+    );
+    
+    // Write src directory var
+    sauWriteSingleLineVar (
+        src_var,
+        p_bi->premake.src_dir
+    );
+
+
+    if(!is_imported) {
+        // Write build directory var
+        sauWriteSingleLineVar (
+            BUILD_DIR_VAR,
+           p_bi->premake.build_dir
+        );
+    }
 
     // Allocate memory for 
     switch (p_bi->platform)
@@ -684,44 +740,42 @@ static void sauWritePremake(BuildInfo *p_bi, FILE *file) {
     // Write with macos config
     case PLATFORM_APPLE:
         // Copy CC_FLAGS data
-        is_cc_flags = sauWritePlatformFlagVar (
+        p_bi->flag_infos.is_cc_flags = sauWritePlatformFlagVar (
             p_bi->premake.cc_flags.all.flags,
             p_bi->premake.cc_flags.all.flag_c,
             p_bi->premake.cc_flags.apple_i.flags,
             p_bi->premake.cc_flags.apple_i.flag_c,
-            C_FLAGS_VAR,
-            file
+            c_flags_var
         );
 
         // Copy CXX_FLAGS data
-        is_cxx_flags = sauWritePlatformFlagVar (
+        p_bi->flag_infos.is_cxx_flags = sauWritePlatformFlagVar (
             p_bi->premake.cxx_flags.all.flags,
             p_bi->premake.cxx_flags.all.flag_c,
             p_bi->premake.cxx_flags.apple_i.flags,
             p_bi->premake.cxx_flags.apple_i.flag_c,
-            CPP_FLAGS_VAR,
-            file
+            cxx_flags_var
         );
 
         // Copy INCLUDE_PATH data
-        is_incl_path = sauWritePlatformMultilineVar (
+        p_bi->flag_infos.is_incl_path = sauWritePlatformMultilineVar (
             p_bi->premake.incl_info.all.paths,
             p_bi->premake.incl_info.all.path_c,
             p_bi->premake.incl_info.apple_i.paths,
             p_bi->premake.incl_info.apple_i.path_c,
-            INCLUDE_PATH_VAR,
-            INCLUDE_FLAG,
-            file
+            incl_path_var,
+            INCLUDE_FLAG
         );
 
         // Copy LIBRARY_PATH data
-        is_lib_path = sauWriteLibraryPathVar (
+        p_bi->flag_infos.is_lib_path = sauWriteLibraryPathVar (
             p_bi->premake.lib_info.all.paths,
             p_bi->premake.lib_info.all.path_c,
             p_bi->premake.lib_info.apple_i.paths,
             p_bi->premake.lib_info.apple_i.path_c,
-            p_bi,
-            file
+            lib_path_var,
+            is_imported,
+            p_bi
         );
 
         break;
@@ -729,44 +783,42 @@ static void sauWritePremake(BuildInfo *p_bi, FILE *file) {
     // Write with linux config
     case PLATFORM_LINUX:
         // Copy CC_FLAGS data
-        is_cc_flags = sauWritePlatformFlagVar (
+        p_bi->flag_infos.is_cc_flags = sauWritePlatformFlagVar (
             p_bi->premake.cc_flags.all.flags,
             p_bi->premake.cc_flags.all.flag_c,
             p_bi->premake.cc_flags.linux_i.flags,
             p_bi->premake.cc_flags.linux_i.flag_c,
-            C_FLAGS_VAR,
-            file
+            c_flags_var
         );
 
         // Copy CXX_FLAGS data
-        is_cxx_flags = sauWritePlatformFlagVar (
+        p_bi->flag_infos.is_cxx_flags = sauWritePlatformFlagVar (
             p_bi->premake.cxx_flags.all.flags,
             p_bi->premake.cxx_flags.all.flag_c,
             p_bi->premake.cxx_flags.linux_i.flags,
             p_bi->premake.cxx_flags.linux_i.flag_c,
-            CPP_FLAGS_VAR,
-            file
+            cxx_flags_var
         );
 
         // Copy INCLUDE_PATH data
-        is_incl_path = sauWritePlatformMultilineVar (
+        p_bi->flag_infos.is_incl_path = sauWritePlatformMultilineVar (
             p_bi->premake.incl_info.all.paths,
             p_bi->premake.incl_info.all.path_c,
             p_bi->premake.incl_info.linux_i.paths,
             p_bi->premake.incl_info.linux_i.path_c,
-            INCLUDE_PATH_VAR,
-            INCLUDE_FLAG,
-            file
+            incl_path_var,
+            INCLUDE_FLAG
         );
 
         // Copy LIBRARY_PATH data
-        is_lib_path = sauWriteLibraryPathVar (
+        p_bi->flag_infos.is_lib_path = sauWriteLibraryPathVar (
             p_bi->premake.lib_info.all.paths,
             p_bi->premake.lib_info.all.path_c,
             p_bi->premake.lib_info.linux_i.paths,
             p_bi->premake.lib_info.linux_i.path_c,
-            p_bi,
-            file
+            lib_path_var,
+            is_imported,
+            p_bi
         );
         break;
 
@@ -783,50 +835,54 @@ static void sauWritePremake(BuildInfo *p_bi, FILE *file) {
         );
 
         // Copy CC_FLAGS data
-        is_cc_flags = sauWritePlatformFlagVar (
+        p_bi->flag_infos.is_cc_flags = sauWritePlatformFlagVar (
             p_bi->premake.cc_flags.all.flags,
             p_bi->premake.cc_flags.all.flag_c,
             p_bi->premake.cc_flags.win_i.flags,
             p_bi->premake.cc_flags.win_i.flag_c,
-            C_FLAGS_VAR,
-            file
+            c_flags_var
         );
 
         // Copy CXX_FLAGS data
-        is_cxx_flags = sauWritePlatformFlagVar (
+        p_bi->flag_infos.is_cxx_flags = sauWritePlatformFlagVar (
             p_bi->premake.cxx_flags.all.flags,
             p_bi->premake.cxx_flags.all.flag_c,
             p_bi->premake.cxx_flags.win_i.flags,
             p_bi->premake.cxx_flags.win_i.flag_c,
-            CPP_FLAGS_VAR,
-            file
+            cxx_flags_var
         );
 
         // Copy INCLUDE_PATH data
-        is_incl_path = sauWritePlatformMultilineVar (
+        p_bi->flag_infos.is_incl_path = sauWritePlatformMultilineVar (
             p_bi->premake.incl_info.all.paths,
             p_bi->premake.incl_info.all.path_c,
             p_bi->premake.incl_info.win_i.paths,
             p_bi->premake.incl_info.win_i.path_c,
-            INCLUDE_PATH_VAR,
-            INCLUDE_FLAG,
-            file
+            incl_path_var,
+            INCLUDE_FLAG
         );
 
         // Copy LIBRARY_PATH data
-        is_lib_path = sauWriteLibraryPathVar (
+        p_bi->flag_infos.is_lib_path = sauWriteLibraryPathVar (
             p_bi->premake.lib_info.all.paths,
             p_bi->premake.lib_info.all.path_c,
             p_bi->premake.lib_info.win_i.paths,
             p_bi->premake.lib_info.win_i.path_c,
-            p_bi,
-            file
+            lib_path_var,
+            is_imported,
+            p_bi
         );
         break;
     
     default:
         break;
     }
+
+    free(c_flags_var);
+    free(cxx_flags_var);
+    free(src_var);
+    free(incl_path_var);
+    free(lib_path_var);
 }
 
 
@@ -851,8 +907,7 @@ static void sauFindLibTargets(BuildInfo *p_bi) {
 static void sauWriteTaskTargetVar (
     PlatformInfo pi, 
     TaskInfo *p_task, 
-    char *project_name,
-    FILE *file
+    char *project_name
 ) {
     char *tmp_str;
     // Create target name variable
@@ -875,14 +930,16 @@ static void sauWriteTaskTargetVar (
     case TARGET_TYPE_DYNAMIC_LIBRARY:
         if(pi == PLATFORM_WINDOWS) {
             tmp_str = (char*) calloc (
-                strlen(target_var) + strlen(p_task->name) + strlen(project_name) + 27,
+                strlen(target_var) + strlen(p_task->name) + 
+                strlen(project_name) + strlen(BUILD_DIR_VAR) + 18,
                 sizeof(char)
             );
 
             sprintf (
                 tmp_str,
-                "%s = $(BUILD_DIR)/%s/lib/%s.dll\n",
+                "%s = $(%s)/%s/lib/%s.dll\n",
                 target_var,
+                BUILD_DIR_VAR,
                 project_name,
                 p_task->name
             );
@@ -890,14 +947,16 @@ static void sauWriteTaskTargetVar (
 
         else {
             tmp_str = (char*) calloc (
-                strlen(target_var) + strlen(p_task->name) + strlen(project_name) + 26,
+                strlen(target_var) + strlen(p_task->name) + 
+                strlen(project_name) + strlen(BUILD_DIR_VAR) + 17,
                 sizeof(char)
             );
 
             sprintf (
                 tmp_str,
-                "%s = $(BUILD_DIR)/%s/lib/%s.so\n",
+                "%s = $(%s)/%s/lib/%s.so\n",
                 target_var,
+                BUILD_DIR_VAR,
                 project_name,
                 p_task->name
             );
@@ -907,14 +966,16 @@ static void sauWriteTaskTargetVar (
     
     case TARGET_TYPE_STATIC_LIBRARY:
         tmp_str = (char*) calloc (
-            strlen(target_var) + strlen(p_task->name) + strlen(project_name) + 25,
+            strlen(target_var) + strlen(p_task->name) + 
+            strlen(project_name) + strlen(BUILD_DIR_VAR) + 16,
             sizeof(char)
         );
 
         sprintf (
             tmp_str,
-            "%s = $(BUILD_DIR)/%s/lib/%s.a\n",
+            "%s = $(%s)/%s/lib/%s.a\n",
             target_var,
+            BUILD_DIR_VAR,
             project_name,
             p_task->name
         );
@@ -922,14 +983,16 @@ static void sauWriteTaskTargetVar (
 
     case TARGET_TYPE_EXECUTABLE:
         tmp_str = (char*) calloc (
-            strlen(target_var) + strlen(p_task->name) + strlen(project_name) + 19,
+            strlen(target_var) + strlen(p_task->name) + 
+            strlen(project_name) + strlen(BUILD_DIR_VAR) + 10,
             sizeof(char)
         );
 
         sprintf (
             tmp_str,
-            "%s = $(BUILD_DIR)/%s/%s\n",
+            "%s = $(%s)/%s/%s\n",
             target_var,
+            BUILD_DIR_VAR,
             project_name,
             p_task->name
         );
@@ -971,7 +1034,7 @@ static void sauWriteTaskTargetVar (
 
 
 /* Write target object variable */
-static void sauWriteTaskObjVar(PlatformInfo pi, TaskInfo *p_task, FILE *file) {
+static void sauWriteTaskObjVar(PlatformInfo pi, TaskInfo *p_task) {
 
     // Get the object variable name
     char *obj_var = (char*) calloc (
@@ -996,8 +1059,7 @@ static void sauWriteTaskObjVar(PlatformInfo pi, TaskInfo *p_task, FILE *file) {
             p_task->obj_info.apple_i.files,
             p_task->obj_info.apple_i.file_c,
             obj_var,
-            "",
-            file
+            ""
         );
         break;
 
@@ -1008,8 +1070,7 @@ static void sauWriteTaskObjVar(PlatformInfo pi, TaskInfo *p_task, FILE *file) {
             p_task->obj_info.linux_i.files,
             p_task->obj_info.linux_i.file_c,
             obj_var,
-            "",
-            file
+            ""
         );
         break;
 
@@ -1040,8 +1101,7 @@ static void sauWriteTaskObjVar(PlatformInfo pi, TaskInfo *p_task, FILE *file) {
             p_task->obj_info.win_i.files,
             p_task->obj_info.win_i.file_c,
             obj_var,
-            "",
-            file
+            ""
         );
         break;
     
@@ -1054,12 +1114,12 @@ static void sauWriteTaskObjVar(PlatformInfo pi, TaskInfo *p_task, FILE *file) {
 /* Write main task into makefile */
 static void sauWriteMainTask (
     TaskInfo *p_task,
+    CompilerFlagInfos *p_fi,
     int32_t c_src_c,
     int32_t cxx_src_c,
     char *target,
     char *objs,
-    PlatformInfo pi,
-    FILE *file
+    PlatformInfo pi
 ) {
     int32_t l_index;
     char *tmp_str;
@@ -1140,7 +1200,7 @@ static void sauWriteMainTask (
     case TARGET_TYPE_DYNAMIC_LIBRARY:
         if(!cxx_src_c) {
             ch_c = 27 + strlen(target) + strlen(objs);
-            if(is_cc_flags) ch_c += strlen(C_FLAGS_VAR) + 4;
+            if(p_fi->is_cc_flags) ch_c += strlen(C_FLAGS_VAR) + 4;
 
             tmp_str = (char*) calloc (
                 ch_c,
@@ -1157,7 +1217,7 @@ static void sauWriteMainTask (
             );
 
             offset += strlen(tmp_str);
-            if(is_cc_flags) {
+            if(p_fi->is_cc_flags) {
                 sprintf(tmp_str + offset, " $(%s)", C_FLAGS_VAR);
                 offset += strlen(C_FLAGS_VAR) + 4;
             }
@@ -1166,7 +1226,7 @@ static void sauWriteMainTask (
 
         else {
             ch_c = 28 + strlen(target) + strlen(objs);
-            if(is_cxx_flags) ch_c += strlen(CPP_FLAGS_VAR) + 4;
+            if(p_fi->is_cxx_flags) ch_c += strlen(CPP_FLAGS_VAR) + 4;
             
             tmp_str = (char*) calloc (
                 ch_c,
@@ -1183,7 +1243,7 @@ static void sauWriteMainTask (
             );
 
             offset += strlen(tmp_str);
-            if(is_cxx_flags) {
+            if(p_fi->is_cxx_flags) {
                 sprintf(tmp_str + offset, " $(%s)", CPP_FLAGS_VAR);
                 offset += strlen(CPP_FLAGS_VAR) + 4;
             }
@@ -1213,16 +1273,16 @@ static void sauWriteMainTask (
         else ch_c += strlen(CPP_COMPILER_VAR) + 3;
         if
         (
-            is_cc_flags &&
+            p_fi->is_cc_flags &&
             !cxx_src_c
         ) ch_c += strlen(C_FLAGS_VAR) + 4;
         else if
         (
-            is_cxx_flags &&
+            p_fi->is_cxx_flags &&
             cxx_src_c
         ) ch_c += strlen(CPP_FLAGS_VAR) + 4;
-        if(is_incl_path) ch_c += strlen(INCLUDE_PATH_VAR) + 4;
-        if(is_lib_path) ch_c += strlen(LIBRARY_PATH_VAR) + 4;
+        if(p_fi->is_incl_path) ch_c += strlen(INCLUDE_PATH_VAR) + 4;
+        if(p_fi->is_lib_path) ch_c += strlen(LIBRARY_PATH_VAR) + 4;
         char *lib_fl = sauGetPlatformSpecificDependencies(p_task, pi);
         if(*lib_fl) ch_c += strlen(lib_fl);
 
@@ -1256,7 +1316,7 @@ static void sauWriteMainTask (
 
         if 
         (
-            is_cc_flags &&
+            p_fi->is_cc_flags &&
             c_src_c >= cxx_src_c
         ) {
             sprintf (
@@ -1269,7 +1329,7 @@ static void sauWriteMainTask (
 
         else if 
         (
-            is_cxx_flags &&
+            p_fi->is_cxx_flags &&
             c_src_c < cxx_src_c
         ) {
             sprintf (
@@ -1280,7 +1340,7 @@ static void sauWriteMainTask (
             offset += strlen(CPP_FLAGS_VAR) + 4;
         }
 
-        if(is_incl_path) {
+        if(p_fi->is_incl_path) {
             sprintf (
                 tmp_str + offset,
                 " $(%s)",
@@ -1289,7 +1349,7 @@ static void sauWriteMainTask (
             offset += strlen(INCLUDE_PATH_VAR) + 4;
         }
 
-        if(is_lib_path) {
+        if(p_fi->is_lib_path) {
             sprintf (
                 tmp_str + offset,
                 " $(%s)",
@@ -1332,8 +1392,9 @@ static void sauWriteSubtask (
     char *obj, 
     char *src,
     TargetType tar_type,
-    PlatformInfo pi, 
-    FILE *file
+    CompilerFlagInfos *p_fi,
+    char *src_var,
+    PlatformInfo pi 
 ) {
     int32_t is_c = 0;
     int32_t is_cpp = 0;
@@ -1343,22 +1404,25 @@ static void sauWriteSubtask (
 
     // Write the task name and dependencies
     tmp_str = (char*) calloc (
-        strlen(obj) + strlen(src) + 15,
+        strlen(obj) + strlen(src) +
+        strlen(src_var) + 8,
         sizeof(char)
     );
 
     if(pi == PLATFORM_WINDOWS)
         sprintf (
             tmp_str,
-            "%s: $(SRC_DIR)\\%s\n",
+            "%s: $(%s)\\%s\n",
             obj,
+            src_var,
             src
         );
     else 
         sprintf (
             tmp_str,
-            "%s: $(SRC_DIR)/%s\n",
+            "%s: $(%s)/%s\n",
             obj,
+            src_var,
             src
         );
 
@@ -1372,20 +1436,22 @@ static void sauWriteSubtask (
     free(tmp_str);
 
     // Write the task specification 
-    int32_t ch_c = 0;
-    if(is_c) ch_c += strlen(obj) + strlen(src) + 27;
-    else ch_c += strlen(obj) + strlen(src) + 28;
+    int32_t ch_c = strlen(src_var) + strlen(src) + strlen(obj);
+    if(is_c) 
+        ch_c += strlen(C_COMPILER_VAR) + 25;
+    else if(is_cpp)
+        ch_c += strlen(CPP_COMPILER_VAR) + 25;
     if
     (
         is_c &&
-        is_cc_flags
+        p_fi->is_cc_flags
     ) ch_c += strlen(C_FLAGS_VAR) + 4;
     else if
     ( 
         is_cpp &&
-        is_cxx_flags
+        p_fi->is_cxx_flags
     ) ch_c += strlen(CPP_FLAGS_VAR) + 4;
-    if(is_incl_path) ch_c += strlen(INCLUDE_PATH_VAR) + 4;
+    if(p_fi->is_incl_path) ch_c += strlen(INCLUDE_PATH_VAR) + 4;
     if(tar_type == TARGET_TYPE_DYNAMIC_LIBRARY) ch_c += 6;
 
     // Allocate memory for tmp_str
@@ -1402,7 +1468,9 @@ static void sauWriteSubtask (
             if(pi == PLATFORM_WINDOWS)
                 sprintf (
                     tmp_str + offset,
-                    "\t$(CC) -c $(SRC_DIR)\\%s -o %s -fPIC",
+                    "\t$(%s) -c $(%s)\\%s -o %s -fPIC",
+                    C_COMPILER_VAR,
+                    src_var,
                     src,
                     obj
                 );
@@ -1410,7 +1478,9 @@ static void sauWriteSubtask (
             else 
                 sprintf (
                     tmp_str + offset,
-                    "\t$(CC) -c $(SRC_DIR)/%s -o %s -fPIC",
+                    "\t$(%s) -c $(%s)/%s -o %s -fPIC",
+                    C_COMPILER_VAR,
+                    src_var,
                     src,
                     obj
                 );
@@ -1419,7 +1489,9 @@ static void sauWriteSubtask (
             if(pi == PLATFORM_WINDOWS)
                 sprintf (
                     tmp_str + offset,
-                    "\t$(CXX) -c $(SRC_DIR)\\%s -o %s -fPIC",
+                    "\t$(%s) -c $(%s)\\%s -o %s -fPIC",
+                    CPP_COMPILER_VAR,
+                    src_var,
                     src,
                     obj
                 );
@@ -1427,7 +1499,9 @@ static void sauWriteSubtask (
             else
                 sprintf (
                     tmp_str + offset,
-                    "\t$(CXX) -c $(SRC_DIR)/%s -o %s -fPIC",
+                    "\t$(%s) -c $(%s)/%s -o %s -fPIC",
+                    CPP_COMPILER_VAR,
+                    src_var,
                     src,
                     obj
                 );
@@ -1440,7 +1514,9 @@ static void sauWriteSubtask (
             if(pi == PLATFORM_WINDOWS)
                 sprintf (
                     tmp_str + offset,
-                    "\t$(CC) -c $(SRC_DIR)\\%s -o %s",
+                    "\t$(%s) -c $(%s)\\%s -o %s",
+                    C_COMPILER_VAR,
+                    src_var,
                     src,
                     obj
                 );
@@ -1448,7 +1524,9 @@ static void sauWriteSubtask (
             else 
                 sprintf (
                     tmp_str + offset,
-                    "\t$(CC) -c $(SRC_DIR)/%s -o %s",
+                    "\t$(%s) -c $(%s)/%s -o %s",
+                    C_COMPILER_VAR,
+                    src_var,
                     src,
                     obj
                 );
@@ -1457,7 +1535,9 @@ static void sauWriteSubtask (
             if(pi == PLATFORM_WINDOWS)
                 sprintf (
                     tmp_str + offset,
-                    "\t$(CXX) -c $(SRC_DIR)\\%s -o %s",
+                    "\t$(%s) -c $(%s)\\%s -o %s",
+                    CPP_COMPILER_VAR,
+                    src_var,
                     src,
                     obj
                 );
@@ -1465,7 +1545,9 @@ static void sauWriteSubtask (
             else
                 sprintf (
                     tmp_str + offset,
-                    "\t$(CXX) -c $(SRC_DIR)/%s -o %s",
+                    "\t$(%s) -c $(%s)/%s -o %s",
+                    CPP_COMPILER_VAR,
+                    src_var,
                     src,
                     obj
                 );
@@ -1481,7 +1563,7 @@ static void sauWriteSubtask (
     if 
     (
         is_c &&
-        is_cc_flags
+        p_fi->is_cc_flags
     ) { 
         sprintf (
             tmp_str + offset,
@@ -1494,7 +1576,7 @@ static void sauWriteSubtask (
     else if 
     (
         is_cpp &&
-        is_cxx_flags
+        p_fi->is_cxx_flags
     ) {
         sprintf (
             tmp_str + offset,
@@ -1504,7 +1586,7 @@ static void sauWriteSubtask (
         offset += strlen(CPP_FLAGS_VAR) + 4;
     }
     
-    if(is_incl_path) {
+    if(p_fi->is_incl_path) {
         sprintf (
             tmp_str + offset,
             " $(%s)",
@@ -1530,10 +1612,7 @@ static void sauWriteSubtask (
 
 
 /* Write initial task into makefile (executed via generated script) */
-static void sauWriteInitTask (
-    PlatformInfo pi,
-    FILE *file
-) {
+static void sauWriteInitTask(PlatformInfo pi) {
     char *tmp_str;
     // Declare task in makefile
     tmp_str = (char*) calloc (
@@ -1602,14 +1681,16 @@ static void sauWriteInitTask (
 static void sauWriteAllTask (
     TaskInfo *tasks,
     int32_t task_c,
-    FILE *file
+    BuildInfo *imports,
+    int32_t im_c
 ) {
-    int32_t l_index;
+    int32_t l_index, r_index;
     char *tmp_str;
 
     // Write the all task declaration
     fwrite (
-        "all:",
+        ALL_TASK_NAME \
+        ":",
         sizeof(char),
         4,
         file
@@ -1636,9 +1717,10 @@ static void sauWriteAllTask (
         );
     }
 
+    // Add all main targets 
     for(l_index = 0; l_index < task_c; l_index++) {
         tmp_str = (char*) calloc (
-            strlen(tasks[l_index].name) + 14,
+            strlen(tasks[l_index].name) + 12,
             sizeof(char)
         );
 
@@ -1660,7 +1742,80 @@ static void sauWriteAllTask (
         free(tmp_str);
     }
 
+    // Add import all tasks
+    for(l_index = 0; l_index < im_c; l_index++) {
+        tmp_str = (char*) calloc (
+            strlen(imports[l_index].all_task) + 2,
+            sizeof(char)
+        );
+
+        sprintf (
+            tmp_str,
+            " %s",
+            imports[l_index].all_task
+        );
+
+        fwrite (
+            tmp_str,
+            sizeof(char),
+            strlen(tmp_str),
+            file
+        );
+
+        free(tmp_str);
+    }
+
     fwrite("\n", sizeof(char), 1, file);
+
+    // Write import all tasks
+    for(l_index = 0; l_index < im_c; l_index++) {
+        tmp_str = (char*) calloc (
+            strlen(imports[l_index].all_task) + 2,
+            sizeof(char)
+        );
+
+        sprintf (
+            tmp_str,
+            "%s:",
+            imports[l_index].all_task
+        );
+
+        fwrite (
+            tmp_str,
+            sizeof(char),
+            strlen(tmp_str),
+            file
+        );
+
+        free(tmp_str);
+
+        // Write all target requirements to all task
+        for(r_index = 0; r_index < imports[l_index].task_c; r_index++) {
+            tmp_str = (char*) calloc (
+                strlen(imports[l_index].tasks[r_index].name) + 12,
+                sizeof(char)
+            );
+
+            sprintf (
+                tmp_str,
+                " $(%s_TARGET)",
+                imports[l_index].tasks[r_index].name
+            );
+
+            strToHigherCase(&tmp_str);
+
+            fwrite (
+                tmp_str,
+                sizeof(char),
+                strlen(tmp_str),
+                file
+            );
+
+            free(tmp_str);
+        }
+
+        fwrite("\n", sizeof(char), 1, file);
+    }
 }
 
 
@@ -1668,8 +1823,7 @@ static void sauWriteAllTask (
 static void sauWriteCopyTask (
     CopyInfo *p_cpy_info,
     PlatformInfo pi,
-    char *pr_name,
-    FILE *file
+    char *pr_name
 ) {
     int32_t l_index;
     char *tmp_str;
@@ -1847,194 +2001,12 @@ static void sauWriteCopyTask (
 }
 
 
-/* Write sym link task if it exists */
-static void sauWriteLinkTask (
-    LinkInfo *p_link_info,
-    PlatformInfo pi,
-    char *pr_name,
-    FILE *file
-) {
-    int32_t l_index;
-    char *tmp_str;
-
-    char **link_tar = NULL;
-    int32_t tar_c = 0;
-    char **link_src = NULL;
-    int32_t src_c = 0;
-
-    // Verify link task existance and combine platform specific links with general links
-    switch (pi)
-    {
-    case PLATFORM_APPLE:
-        if
-        (
-            !p_link_info->all.link_c &&
-            !p_link_info->apple_i.link_c
-        ) return;
-
-        cmbStrArr (
-            p_link_info->all.links,
-            p_link_info->all.link_c,
-            p_link_info->apple_i.links,
-            p_link_info->apple_i.link_c,
-            &link_tar,
-            &tar_c
-        );
-
-        cmbStrArr (
-            p_link_info->all.srcs,
-            p_link_info->all.link_c,
-            p_link_info->apple_i.srcs,
-            p_link_info->apple_i.link_c,
-            &link_src,
-            &src_c
-        );
-        
-        break;
-    
-    case PLATFORM_LINUX:
-        if
-        (
-            !p_link_info->all.link_c &&
-            !p_link_info->linux_i.link_c
-        ) return;
-
-        cmbStrArr (
-            p_link_info->all.links,
-            p_link_info->all.link_c,
-            p_link_info->linux_i.links,
-            p_link_info->linux_i.link_c,
-            &link_tar,
-            &tar_c
-        );
-
-        cmbStrArr (
-            p_link_info->all.srcs,
-            p_link_info->all.link_c,
-            p_link_info->linux_i.srcs,
-            p_link_info->linux_i.link_c,
-            &link_src,
-            &src_c
-        );
-
-        break;
-
-    case PLATFORM_WINDOWS:
-        if 
-        (
-            !p_link_info->all.link_c &&
-            !p_link_info->win_i.link_c
-        ) return;
-
-        cmbStrArr (
-            p_link_info->all.links,
-            p_link_info->all.link_c,
-            p_link_info->win_i.links,
-            p_link_info->win_i.link_c,
-            &link_tar,
-            &tar_c
-        );
-
-        cmbStrArr (
-            p_link_info->all.srcs,
-            p_link_info->all.link_c,
-            p_link_info->win_i.srcs,
-            p_link_info->win_i.link_c,
-            &link_src,
-            &src_c
-        );
-
-        break;
-    
-    default:
-        break;
-    }
-
-    is_link = true;
-    fwrite (
-        "\n" \
-        LINK_TASK \
-        ": ." \
-        SCRIPT_NAME \
-        "\n", 
-        sizeof(char), 
-        strlen(LINK_TASK) + strlen(SCRIPT_NAME) + 5, 
-        file
-    );
-    
-    // Write the copy task
-    switch (pi)
-    {
-    case PLATFORM_WINDOWS:
-        for(l_index = 0; l_index < src_c; l_index++) {
-            tmp_str = (char*) calloc (
-                strlen(link_src[l_index]) + strlen(link_tar[l_index]) + 
-                strlen(pr_name) + strlen(BUILD_DIR_VAR) + 28,
-                sizeof(char)
-            );
-
-            sauFixWindowsPaths(&link_src[l_index], 1);
-
-            sprintf (
-                tmp_str,
-                "\tcmd /c \"mklink /J $(%s)\\%s\\%s %s\"\n",
-                BUILD_DIR_VAR,
-                pr_name,
-                link_tar[l_index],
-                link_src[l_index]
-            );
-
-            fwrite (
-                tmp_str,
-                sizeof(char),
-                strlen(tmp_str),
-                file
-            );
-
-            free(tmp_str);
-        }
-        break;
-
-    case PLATFORM_APPLE:
-    case PLATFORM_LINUX:
-        for(l_index = 0; l_index < src_c; l_index++) {
-            tmp_str = (char*) calloc (
-                strlen(link_src[l_index]) + strlen(link_tar[l_index]) +
-                strlen(BUILD_DIR_VAR) + strlen(pr_name) + 36,
-                sizeof(char)
-            );
-
-            sprintf (
-                tmp_str,
-                "\tln -s $$(realpath %s) $$(realpath $(%s)/%s/%s)\n",
-                link_src[l_index],
-                BUILD_DIR_VAR,
-                pr_name,
-                link_tar[l_index]
-            );
-
-            fwrite (
-                tmp_str,
-                sizeof(char),
-                strlen(tmp_str),
-                file
-            );
-
-            free(tmp_str);
-        }
-        break;
-    
-    default:
-        break;
-    }
-}
-
-
 /* Write task compilation steps into makefile */
 static void sauWriteTask (
-    TaskInfo *p_task, 
-    PlatformInfo pi, 
-    FILE *file
+    TaskInfo *p_task,
+    CompilerFlagInfos *p_fi,
+    PlatformInfo pi,
+    char *src_var
 ) {
     char *target, *objs;
     int32_t c_src_c = 0;
@@ -2176,18 +2148,25 @@ static void sauWriteTask (
     // Write main task
     sauWriteMainTask (
         p_task,
+        p_fi,
         c_src_c,
         cxx_src_c,
         target,
         objs,
-        pi,
-        file
+        pi
     );
 
     int32_t l_index;
     // Write all subtasks for every object
     for(l_index = 0; l_index < src_c; l_index++)
-        sauWriteSubtask(obj_arr[l_index], src_arr[l_index], p_task->type, pi, file);
+        sauWriteSubtask (
+            obj_arr[l_index], 
+            src_arr[l_index], 
+            p_task->type, 
+            p_fi,
+            src_var,
+            pi 
+        );
 
     free(target);
     free(objs);
@@ -2199,8 +2178,7 @@ static void sauWriteClean (
     TaskInfo *tasks,
     int32_t task_c,
     PlatformInfo pi,
-    char *pr_name,
-    FILE *file
+    char *pr_name
 ) {
     char *tmp_str;
 
@@ -2358,20 +2336,22 @@ static void sauGetObjectFileNames(TaskInfo *p_task) {
 }
 
 
-/* Main Makefile creator function */
-void sauWriteMakefile(BuildInfo *p_bi) {
-    int32_t l_index;
-
+/* Initialise all makefile variables */
+void sauInitMakefileVars (
+    BuildInfo *p_bi,
+    BuildInfo *imports,
+    int32_t im_c
+) {
+    int32_t l_index, r_index;
     lib_targets = (char**) calloc (
         1,
         sizeof(char*)
     );
     lib_tar_c = 0;
 
-    FILE *file;
     file = fopen("Makefile", "w");
 
-    // Write all comments
+    // Write all beginning makefile comments
     switch (p_bi->platform)
     {
     case PLATFORM_APPLE:
@@ -2427,67 +2407,218 @@ void sauWriteMakefile(BuildInfo *p_bi) {
     );
 
     sauFindLibTargets(p_bi);
+    
+    // Write C compiler variable
+    if(p_bi->premake.cc_info.cc)
+        sauWriteSingleLineVar (
+            C_COMPILER_VAR, 
+            p_bi->premake.cc_info.cc
+        );
 
+    // Write C++ compiler variable
+    if(p_bi->premake.cc_info.cxx)
+        sauWriteSingleLineVar (
+            CPP_COMPILER_VAR, 
+            p_bi->premake.cc_info.cxx
+        );
+
+    fwrite("\n", sizeof(char), 1, file);
+
+    /********** Imported project *********/
     // Write premake information
-    sauWritePremake (
-        p_bi,
-        file
-    );
-
-    // Write all task premake variables
-    for(l_index = 0; l_index < p_bi->task_c; l_index++) {
-        fwrite("\n", sizeof(char), 1, file);
-        sauGetObjectFileNames(&p_bi->tasks[l_index]);
-        sauWriteTaskTargetVar(p_bi->platform, &p_bi->tasks[l_index], p_bi->premake.project_name, file);
-        sauWriteTaskObjVar(p_bi->platform, &p_bi->tasks[l_index], file);
+    for(l_index = 0; l_index < im_c; l_index++) {
+        sauWritePremake(&imports[l_index], true);
+        
+        // Write all task related variables
+        for(r_index = 0; r_index < imports[l_index].task_c; r_index++) {
+            fwrite("\n", sizeof(char), 1, file);
+            sauGetObjectFileNames(&imports[l_index].tasks[r_index]);
+            sauWriteTaskTargetVar (
+                p_bi->platform, 
+                &imports[l_index].tasks[r_index], 
+                p_bi->premake.project_name
+            );
+            sauWriteTaskObjVar(p_bi->platform, &imports[l_index].tasks[r_index]);
+        }
     }
 
-    
+    /****** Master project ********/
+    sauWritePremake(p_bi, false);
+    // Write all task related variables
+    for(r_index = 0; r_index < p_bi->task_c; r_index++) {
+        fwrite("\n", sizeof(char), 1, file);
+        sauGetObjectFileNames(&p_bi->tasks[r_index]);
+        sauWriteTaskTargetVar (
+            p_bi->platform, 
+            &p_bi->tasks[r_index], 
+            p_bi->premake.project_name
+        );
+        sauWriteTaskObjVar(p_bi->platform, &p_bi->tasks[r_index]);
+    }
+}
+
+
+/* Main Makefile creator function */
+void sauWriteMakefile (
+    BuildInfo *p_bi, 
+    BuildInfo *imports, 
+    int32_t im_c
+) {
+    int32_t l_index, r_index;
+    char *tmp_str;
+
     // Write init script into makefile
     if(p_bi->platform == PLATFORM_WINDOWS) {
         smWriteBatchInit (
-            p_bi->tasks,
-            p_bi->task_c,
-            p_bi->premake.project_name
+            p_bi,
+            imports,
+            im_c
         );
     }
+
     else {
         smWriteBashInit (
-            p_bi->tasks,
-            p_bi->task_c,
-            p_bi->platform,
-            p_bi->premake.project_name
+            p_bi,
+            imports,
+            im_c
         );
     }
 
     // Write init task into makefile
     fwrite("\n", sizeof(char), 1, file);
-    sauWriteInitTask(p_bi->platform, file);
+    sauWriteInitTask(p_bi->platform);
 
     // Write copy and link tasks if they exist
     sauWriteCopyTask (
         &p_bi->cpy_info, 
         p_bi->platform, 
-        p_bi->premake.project_name, 
-        file
-    );
-    
-    sauWriteLinkTask (
-        &p_bi->link_info, 
-        p_bi->platform, 
-        p_bi->premake.project_name,
-        file
+        p_bi->premake.project_name 
     );
     
     // Write default all task
     fwrite("\n", sizeof(char), 1, file);
-    sauWriteAllTask(p_bi->tasks, p_bi->task_c, file);
+    sauWriteAllTask (
+        p_bi->tasks, 
+        p_bi->task_c, 
+        imports, 
+        im_c
+    );
 
-    // Write tasks into makefile
+    // Write import tasks into makefile
+    for(l_index = 0; l_index < im_c; l_index++) {
+        // Write import build comment
+        tmp_str = (char*) calloc (
+            42 + strlen(imports[l_index].premake.project_name),
+            sizeof(char)
+        );
+
+        sprintf (
+            tmp_str,
+            "\n\n########### IMPORT BUILD: %s ###########\n",
+            imports[l_index].premake.project_name
+        );
+
+        fwrite (
+            tmp_str,
+            sizeof(char),
+            strlen(tmp_str),
+            file
+        );
+
+        free(tmp_str);
+
+        for(r_index = 0; r_index < imports[l_index].task_c; r_index++) {
+            fwrite("\n", sizeof(char), 1, file);
+            
+            // Find src variable
+            tmp_str = sauMakeVarName (
+                SRC_DIR_VAR, 
+                imports[l_index].premake.project_name,
+                true
+            );
+
+            sauWriteTask (
+                &imports[l_index].tasks[r_index],
+                &imports->flag_infos,
+                p_bi->platform,
+                tmp_str
+            );
+
+            free(tmp_str);
+        }
+
+        // Declare end of import build
+        tmp_str = (char*) calloc (
+            46,
+            sizeof(char)
+        );
+
+        sprintf (
+            tmp_str,
+            "\n########### END OF IMPORT BUILD ###########\n"
+        );
+
+        fwrite (
+            tmp_str,
+            sizeof(char),
+            strlen(tmp_str),
+            file
+        );
+
+        free(tmp_str);
+    }
+
+
+    // Write main build comment
+    tmp_str = (char*) calloc (
+        40 + strlen(p_bi->premake.project_name),
+        sizeof(char)
+    );
+
+    sprintf (
+        tmp_str,
+        "\n\n########### MAIN BUILD: %s ###########\n",
+        p_bi->premake.project_name
+    );
+
+    fwrite (
+        tmp_str,
+        sizeof(char),
+        strlen(tmp_str),
+        file
+    );
+    
+    free(tmp_str);
+
     for(l_index = 0; l_index < p_bi->task_c; l_index++) {
         fwrite("\n", sizeof(char), 1, file);
-        sauWriteTask(&p_bi->tasks[l_index], p_bi->platform, file);
+        sauWriteTask (
+            &p_bi->tasks[l_index],
+            &p_bi->flag_infos, 
+            p_bi->platform,
+            SRC_DIR_VAR
+        );
     }
+
+    // Declare end of main build
+    tmp_str = (char*) calloc (
+        44,
+        sizeof(char)
+    );
+
+    sprintf (
+        tmp_str,
+        "\n########### END OF MAIN BUILD ###########\n"
+    );
+
+    fwrite (
+        tmp_str,
+        sizeof(char),
+        strlen(tmp_str),
+        file
+    );
+    
+    free(tmp_str);
 
     // Write phony tasks
     fwrite("\n", sizeof(char), 1, file);
@@ -2495,8 +2626,7 @@ void sauWriteMakefile(BuildInfo *p_bi) {
         p_bi->tasks, 
         p_bi->task_c, 
         p_bi->platform, 
-        p_bi->premake.project_name, 
-        file
+        p_bi->premake.project_name
     );
 
     fclose(file);

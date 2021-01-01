@@ -18,6 +18,7 @@
 #define CPP_FLAGS_VAR       "CXX_FLAGS"
 #define INCLUDE_PATH_VAR    "INCL_PATH"
 #define LIBRARY_PATH_VAR    "LIB_PATH"
+#define ALL_TASK_NAME       "all"
 
 // Precompilation tasks
 #define INIT_TASK           "." \
@@ -33,39 +34,41 @@
 #ifdef MAKE_WRITER_PRIVATE
     // Main makefile writer functions 
     static void sauFindLibTargets(BuildInfo *p_bi);
-    static void sauWritePremake(BuildInfo *p_bi, FILE *file);
+    static void sauWritePremake(BuildInfo *p_bi, uint8_t is_imported);
     static void sauGetObjectFileNames(TaskInfo *p_task);
-    static void sauWriteTaskTargetVar(PlatformInfo pi, TaskInfo *p_task, char *project_name, FILE *file);
-    static void sauWriteTaskObjVar(PlatformInfo pi, TaskInfo *p_task, FILE *file);
+    static void sauWriteTaskTargetVar(PlatformInfo pi, TaskInfo *p_task, char *project_name);
+    static void sauWriteTaskObjVar(PlatformInfo pi, TaskInfo *p_task);
     
     // Task writers
-    static void sauWriteInitTask(PlatformInfo pi, FILE *file);
-    static void sauWriteAllTask(TaskInfo *tasks, int32_t task_c, FILE *file);
-    static void sauWriteTask(TaskInfo *p_task, PlatformInfo pi, FILE *file);
-    static void sauWriteSubtask(char *obj, char *src, TargetType tar_type, PlatformInfo pi, FILE *file);
-    static void sauWriteMainTask(TaskInfo *p_task, int32_t c_src_c, int32_t cxx_src_c, char *target, char *objs, PlatformInfo pi, FILE *file);
-    static void sauWriteCopyTask(CopyInfo *p_cpy_info, PlatformInfo pi, char *pr_name, FILE *file);
-    static void sauWriteLinkTask(LinkInfo *p_cpy_info, PlatformInfo pi, char *pr_name, FILE *file);
-    static void sauWriteClean(TaskInfo *tasks, int32_t task_c, PlatformInfo pi, char *pr_name, FILE *file);
+    static void sauWriteInitTask(PlatformInfo pi);
+    static void sauWriteAllTask(TaskInfo *main_tasks, int32_t main_task_c, BuildInfo *imports, int32_t im_c);
+    static void sauWriteTask(TaskInfo *p_task, CompilerFlagInfos *p_fi, PlatformInfo pi, char *src_var);
+    static void sauWriteSubtask(char *obj, char *src, TargetType tar_type, CompilerFlagInfos *p_fi, char *src_var, PlatformInfo pi);
+    static void sauWriteMainTask(TaskInfo *p_task, CompilerFlagInfos *p_fi, int32_t c_src_c, int32_t cxx_src_c, char *target, char *objs, PlatformInfo pi);
+    static void sauWriteCopyTask(CopyInfo *p_cpy_info, PlatformInfo pi, char *pr_name);
+    static void sauWriteClean(TaskInfo *tasks, int32_t task_c, PlatformInfo pi, char *pr_name);
 
     // Platform specific functions
-    static uint8_t sauWriteLibraryPathVar(char **all_str, int32_t all_str_c, char **pl_str, int32_t pl_str_c, BuildInfo *p_bi, FILE *file);
-    static uint8_t sauWritePlatformFlagVar(char **all_str, int32_t all_str_c, char **pl_str, int32_t pl_str_c, char *var_name, FILE *file);
-    static uint8_t sauWritePlatformMultilineVar(char **all_str, int32_t all_str_c, char **pl_str, int32_t pl_str_c, char *var_name, char *fl, FILE *file);
+    static char *sauMakeVarName(char *var_base, char *pr_name, uint8_t is_imported);
+    static uint8_t sauWriteLibraryPathVar(char **all_str, int32_t all_str_c, char **pl_str, int32_t pl_str_c, char *lib_var, uint8_t is_imported, BuildInfo *p_bi);
+    static uint8_t sauWritePlatformFlagVar(char **all_str, int32_t all_str_c, char **pl_str, int32_t pl_str_c, char *var_name);
+    static uint8_t sauWritePlatformMultilineVar(char **all_str, int32_t all_str_c, char **pl_str, int32_t pl_str_c, char *var_name, char *fl);
     static void sauGetPlatformSpecificObjNames(char **srcs, int32_t src_c, char ***p_objs, int32_t *p_obj_c, char *target_name);
     static char* sauGetPlatformSpecificDependencies(TaskInfo *p_task, PlatformInfo pi);
 
     // Helper functions
     static void sauPushDefaultLibraryPath(BuildInfo *p_bi, char ***p_arr, int32_t *p_arr_len);
-    static void sauFixWindowsPaths(char **paths, int32_t path_c);
     static void sauCountSrcTypes(char **srcs, int32_t src_c, int32_t *p_c_src_c, int32_t *p_cxx_src_c);
 
     // Universal variable writer functions
-    static void sauWriteSingleLineVar(char *var, char *var_val, FILE *file);
-    static void sauWriteFlagsVar(char *var, char **flags, int32_t flag_c, FILE *file);
-    static void sauWriteMultiLineVar(char *var, char *flag, char **var_vals, int32_t val_c, FILE *file);
+    static void sauWriteSingleLineVar(char *var, char *var_val);
+    static void sauWriteFlagsVar(char *var, char **flags, int32_t flag_c);
+    static void sauWriteMultiLineVar(char *var, char *flag, char **var_vals, int32_t val_c);
 #endif
 
-void sauWriteMakefile(BuildInfo *p_bi);
+void sauFixWindowsPaths(char **paths, int32_t path_c);
+void sauInitMakefileVars(BuildInfo *p_bi, BuildInfo *imports, int32_t im_c);
+void sauWriteImports(BuildInfo **im_bis, int32_t im_c);
+void sauWriteMakefile(BuildInfo *p_bi, BuildInfo *imports, int32_t im_c);
 
 #endif

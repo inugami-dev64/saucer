@@ -13,10 +13,15 @@ Using Windows configuration: `$ saucer build.yml -p windows`
 Using Linux configuration: `$ saucer build.yml -p linux`  
 
 ## YAML configuration
-Yaml configuration file can be created easily. Two most important keys in yaml configuration file are `premake` and `tasks` keys. Additionally `link` and `cpy` flags can be used to add copy or symlink to build directory. Keys that support platform specific values can be specified with following subkeys:  
+Yaml configuration file can be created easily. Two most important keys in yaml configuration file are `premake` and `tasks` keys. Keys that support platform specific values can be specified with following subkeys:  
 `apple` for macos specific configuration value  
 `linux` for linux specific configuration value    
-`windows` for windows specific configuration value  
+`windows` for windows specific configuration value
+### Import
+Sometimes it might be necessary to use another projects in your project. For that purpose `import` flag can be used, which allows to use other projects' build configs with different source directories, while keeping the same build destination directory as your initial project.  
+Import flag specification is following:  
+* `import`        - path to other build config (optional / can be platform specific)  
+
 ### Premake
 Premake key can contain following subkeys:  
 * `cc`            - C compiler (semi-optional / non platfrom specific)
@@ -40,6 +45,8 @@ Task types can be following:
 * `dynamic_lib`   - dynamic library target (.so for unix like systems / .dll for windows)
 * `static_lib`    - static library target    
 
+### Cpy and link keys
+`cpy` key allows to copy target to build/[PROJECT_NAME] and `link` key creates a new symlink between  a target and build/[PROJECT_NAME]    
 Cpy and link keys:
 * `cpy`           - copy from subkey value to destination in [BUILD_DIR]/[SUBKEY_NAME]  
 * `link`          - create symlink between subkey value and [BUILD_DIR]/[SUBKEY_NAME]  

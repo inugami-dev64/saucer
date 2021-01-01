@@ -52,7 +52,7 @@ static void sauFindSrcFileExt(char *file) {
 } 
 
 
-/* Find all linux specific values */
+/* Find all platform specific values */
 static void sauFindPlatformValues (
     KeyData *keys, 
     int32_t key_c, 
@@ -62,11 +62,11 @@ static void sauFindPlatformValues (
     char *platform
 ) {
     int32_t l_index; 
-    int32_t max_ws = keys[cur_index].ws_c;
+    int32_t min_ws = keys[cur_index].ws_c;
 
     // Find the platform key
     for(l_index = cur_index + 1; l_index < key_c; l_index++) {
-        if(keys[l_index].ws_c <= max_ws) return;
+        if(keys[l_index].ws_c <= min_ws) return;
         if
         (
             !strcmp (
@@ -140,6 +140,13 @@ static void sauInitPremakeValues(BuildInfo *p_bi) {
     #ifdef __APPLE__
         p_bi->platform = PLATFORM_APPLE;
     #endif
+
+
+    // Compiler flag info declaration booleans
+    p_bi->flag_infos.is_cc_flags = false;
+    p_bi->flag_infos.is_cxx_flags = false;
+    p_bi->flag_infos.is_incl_path = false;
+    p_bi->flag_infos.is_lib_path = false;
 
     // Compiler
     p_bi->premake.cc_info.cc = NULL;
@@ -704,6 +711,82 @@ static void sauAssemblePremake (
 }
 
 
+/* Find all imported build configs */
+static void sauFindImports (
+    KeyData *keys,
+    int32_t key_c,
+    BuildInfo *p_bi
+) {
+    int32_t l_index;
+
+    // Find the import key
+    uint8_t found_imports = false;
+    int32_t im_beg;
+    for(l_index = 0; l_index < key_c; l_index++) {
+        if
+        (
+            !strcmp(keys[l_index].key_name, "import") &&
+            base_ws == keys[l_index].ws_c
+        ) {
+            im_beg = l_index;
+            found_imports = true;
+            break;
+        }
+    }
+
+    if(!found_imports) return;
+
+    p_bi->import.all.imports = keys[im_beg].key_vals;
+    p_bi->import.all.import_c = keys[im_beg].key_val_c;
+    
+    // Find apple values
+    sauFindPlatformValues (
+        keys,
+        key_c,
+        im_beg,
+        &p_bi->import.apple_i.imports,
+        &p_bi->import.apple_i.import_c,
+        "apple"
+    );
+
+    // Find linux values
+    sauFindPlatformValues (
+        keys,
+        key_c,
+        im_beg,
+        &p_bi->import.linux_i.imports,
+        &p_bi->import.linux_i.import_c,
+        "linux"
+    );
+
+    // Find windows values
+    sauFindPlatformValues (
+        keys,
+        key_c,
+        im_beg,
+        &p_bi->import.win_i.imports,
+        &p_bi->import.win_i.import_c,
+        "windows"
+    );
+
+    // Check for import key value error
+    if
+    (
+        found_imports && 
+        p_bi->import.all.import_c &&
+        p_bi->import.apple_i.import_c &&
+        p_bi->import.linux_i.import_c  &&
+        p_bi->import.win_i.import_c
+    ) {
+        BERR (
+            "specified key with no values ",
+            keys[im_beg].key_name
+        );
+        exit(ERRC_BUILD_CFG);
+    }
+}
+
+
 /* Assemble all information needed for tasks */
 static void sauAssembleTasks 
 (
@@ -714,7 +797,7 @@ static void sauAssembleTasks
     int32_t l_index;
 
     // Find the tasks key
-    uint8_t found_tasks;
+    uint8_t found_tasks = false;
     int32_t task_beg, max_ws;
     for(l_index = 0; l_index < key_c; l_index++) {
         if
@@ -994,7 +1077,7 @@ static void sauFindCopies (
                 // Check for value error
                 if(!keys[l_index].key_val_c) {
                     BERR (
-                        "link key with no value",
+                        "cpy key with no value",
                         keys[l_index].key_name
                     );
 
@@ -1024,7 +1107,7 @@ static void sauFindCopies (
             // Check for value error
             if(!keys[l_index].key_val_c) {
                 BERR (
-                    "copy key with no value",
+                    "link key with no value",
                     keys[l_index].key_name
                 );
 
@@ -1103,7 +1186,8 @@ static void sauFindCopies (
 void sauAssembleBuildData (
     KeyData *keys, 
     int32_t key_c, 
-    BuildInfo *p_bi
+    BuildInfo *p_bi,
+    uint8_t is_imported
 ) {
     int32_t l_index;
     // Find the base whitespace count
@@ -1119,7 +1203,35 @@ void sauAssembleBuildData (
     }
 
     sauInitPremakeValues(p_bi);
+    sauFindImports(keys, key_c, p_bi);
     sauAssemblePremake(keys, key_c, p_bi);
+    // Find project all task 
+    if(is_imported) {
+        p_bi->all_task = (char*) calloc (
+            strlen(ALL_TASK_NAME) + strlen(p_bi->premake.project_name) + 2,
+            sizeof(char)
+        );
+
+        sprintf (
+            p_bi->all_task,
+            "%s_%s",
+            p_bi->premake.project_name,
+            ALL_TASK_NAME
+        );
+    }
+
+    else {
+        p_bi->all_task = (char*) calloc (
+            strlen(ALL_TASK_NAME) + 1,
+            sizeof(char)
+        );
+
+        sprintf (
+            p_bi->all_task,
+            "%s",
+            ALL_TASK_NAME
+        );
+    }
     sauAssembleTasks(keys, key_c, p_bi);
     sauFindLinks(keys, key_c, p_bi);
     sauFindCopies(keys, key_c, p_bi);

@@ -11,11 +11,20 @@
 
 #ifdef SCRIPT_MAN_PRIVATE
     // Directory finders
-    static void smFindDirs(TaskInfo *tasks, int32_t task_c, char *pr_name, char ***p_paths, int32_t *p_path_c, uint8_t is_win);
+    static void smFindDirs (
+        TaskInfo *tasks, 
+        int32_t task_c, 
+        char *pr_name, 
+        char ***p_paths, 
+        int32_t *p_path_c, 
+        uint8_t is_win,
+        uint8_t is_import
+    );
     static void smCleanDirInfo(char **paths, int32_t path_c);
+    static void smFindLinks(BuildInfo *p_bi, char ***p_links, char ***p_srcs, int32_t *p_link_c);
 #endif
 
 // Main script writer functions
-void smWriteBashInit(TaskInfo *tasks, int32_t task_c, PlatformInfo pi, char *project_name);
-void smWriteBatchInit(TaskInfo *tasks, int32_t task_c, char *project_name);
+void smWriteBashInit(BuildInfo *p_bi, BuildInfo *imports, int32_t im_c);
+void smWriteBatchInit(BuildInfo *p_bi, BuildInfo *imports, int32_t im_c);
 #endif
