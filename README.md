@@ -29,9 +29,12 @@ Premake key can contain following subkeys:
 * `cc_flags`      - universal C compiler flags (optional / can be platform specific)
 * `cxx_flags`     - universal C++ compiler flags (optional / can be platform specific)
 * `include_path`  - include paths that are used by compiler (optional / can be platform specific)
+* `library_path`  - library path used in linking (optional / non platform specific)   
 * `src_dir`       - path for all the source files (mandatory / non platform specific)
 * `build_dir`     - path for all the binary files (mandatory / non platform specific)
 * `project_name`  - name of the project (mandatory / non platform specific)  
+* `library_path`  - path to search for libraries
+
 
 ### Tasks
 Tasks key must contain at least one subkey with it's name being used as a task target.  

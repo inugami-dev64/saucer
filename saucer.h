@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#define __USE_MISC
 #include <dirent.h>
 
 #include "yaml_parser.h"
