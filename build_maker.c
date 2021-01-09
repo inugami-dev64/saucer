@@ -285,6 +285,16 @@ static void sauInitPremakeValues(BuildInfo *p_bi) {
         sizeof(char*)
     );
     p_bi->link_info.win_i.link_c = 0;
+
+    // Import config file datas
+    p_bi->import.all.import_c = 0;
+    p_bi->import.all.imports = NULL;
+    p_bi->import.apple_i.import_c = 0;
+    p_bi->import.apple_i.imports = NULL;
+    p_bi->import.linux_i.import_c = 0;
+    p_bi->import.linux_i.imports = NULL;
+    p_bi->import.win_i.import_c = 0;
+    p_bi->import.win_i.imports = NULL;
 }
 
 
