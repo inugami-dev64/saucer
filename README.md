@@ -33,7 +33,7 @@ Premake key can contain following subkeys:
 * `src_dir`       - path for all the source files (mandatory / non platform specific)
 * `build_dir`     - path for all the binary files (mandatory / non platform specific)
 * `project_name`  - name of the project (mandatory / non platform specific)  
-* `library_path`  - path to search for libraries
+
 
 
 ### Tasks
